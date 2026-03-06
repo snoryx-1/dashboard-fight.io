@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fight.io — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg:      #07090d;
+    --bg2:     #0c1018;
+    --bg3:     #111620;
+    --border:  #1a2436;
+    --border2: #223044;
+    --gold:    #e8a020;
+    --gold2:   #f5c842;
+    --red:     #e05555;
+    --green:   #3db878;
+    --blue:    #4d9fe0;
+    --text:    #ccd8e8;
+    --text2:   #6a88a8;
+    --text3:   #344050;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; min-height: 100vh; }
+  h1,h2,h3,h4,h5,button,label { font-family: 'Rajdhani', sans-serif; }
+
+  /* ── Login ── */
+  #login-screen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% -10%, #1a2a14 0%, var(--bg) 55%);
+  }
+  .login-box {
+    width: 360px; padding: 48px 40px;
+    background: var(--bg2); border: 1px solid var(--border); border-top: 3px solid var(--gold);
+    box-shadow: 0 0 80px rgba(232,160,32,.07);
+  }
+  .login-logo { text-align: center; margin-bottom: 36px; }
+  .login-logo .icon { font-size: 44px; display: block; filter: drop-shadow(0 0 18px rgba(232,160,32,.45)); margin-bottom: 10px; }
+  .login-logo h1 { font-size: 30px; color: var(--gold); letter-spacing: 4px; }
+  .login-logo p { color: var(--text2); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
+  .field-label { display: block; font-size: 11px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 600; margin-bottom: 7px; }
+  input, select, textarea {
+    width: 100%; padding: 10px 14px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border2); border-radius: 4px; font-family: 'DM Sans', sans-serif;
+    font-size: 14px; outline: none; transition: border-color .15s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--gold); }
+  .err-msg { color: var(--red); font-size: 12px; padding: 8px 12px; background: rgba(224,85,85,.08); border: 1px solid rgba(224,85,85,.25); border-radius: 4px; margin-bottom: 14px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 20px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; transition: opacity .15s, transform .1s; }
+  .btn:active { transform: scale(.97); }
+  .btn-gold  { background: var(--gold); color: #000; }
+  .btn-blue  { background: rgba(77,159,224,.15); color: var(--blue); border: 1px solid rgba(77,159,224,.3); }
+  .btn-red   { background: rgba(224,85,85,.1); color: var(--red); border: 1px solid rgba(224,85,85,.25); }
+  .btn-ghost { background: var(--bg3); color: var(--text2); border: 1px solid var(--border2); }
+  .btn-full  { width: 100%; padding: 13px; font-size: 14px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* ── Dashboard shell ── */
+  #app { display: none; min-height: 100vh; }
+  .topbar {
+    height: 54px; background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px; position: sticky; top: 0; z-index: 40;
+  }
+  .topbar-left { display: flex; align-items: center; gap: 14px; }
+  .topbar-logo { font-size: 22px; color: var(--gold); letter-spacing: 3px; }
+  .topbar-sep { color: var(--border2); font-size: 18px; }
+  .topbar-sub { color: var(--text2); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; }
+  .layout { display: flex; min-height: calc(100vh - 54px); }
+
+  /* ── Sidebar ── */
+  .sidebar { width: 190px; background: var(--bg2); border-right: 1px solid var(--border); padding: 20px 0; flex-shrink: 0; }
+  .nav-btn {
+    display: block; width: 100%; padding: 11px 22px; background: transparent;
+    color: var(--text2); font-size: 14px; text-align: left; border: none;
+    border-left: 3px solid transparent; cursor: pointer; transition: all .15s;
+    font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  }
+  .nav-btn:hover { background: var(--bg3); color: var(--text); }
+  .nav-btn.active { background: var(--bg3); color: var(--gold); border-left-color: var(--gold); }
+  .main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+
+  /* ── Section header ── */
+  .section-header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .section-header h2 { font-size: 19px; color: var(--gold); letter-spacing: 2px; white-space: nowrap; }
+  .section-header .line { flex: 1; height: 1px; background: var(--border); }
+
+  /* ── Cards/panels ── */
+  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 22px; margin-bottom: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; border-top-width: 2px; }
+  .stat-label { font-size: 10px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 700; }
+  .stat-value { font-size: 30px; font-family: 'Rajdhani', sans-serif; font-weight: 700; margin: 3px 0; }
+  .stat-sub { font-size: 12px; color: var(--text2); }
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 700px) { .charts-grid { grid-template-columns: 1fr; } .stat-grid { grid-template-columns: 1fr 1fr; } }
+
+  /* ── Table ── */
+  .tbl { width: 100%; border-collapse: collapse; }
+  .tbl th { padding: 9px 12px; text-align: left; font-size: 10px; color: var(--text2); letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--border); font-weight: 700; }
+  .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .tbl tr:hover td { background: var(--bg3); }
+  .tbl tr:last-child td { border-bottom: none; }
+  .mono { font-family: 'Share Tech Mono', monospace; }
+
+  /* ── Badges ── */
+  .rank-badge { font-family: 'Rajdhani'; font-weight: 700; font-size: 13px; }
+  .tier-badge { font-size: 10px; font-family: 'Rajdhani'; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; }
+  .tier-Basic  { background: rgba(106,136,168,.15); color: var(--text2); }
+  .tier-Elite  { background: rgba(77,159,224,.15); color: var(--blue); }
+  .tier-Ultra  { background: rgba(232,160,32,.15); color: var(--gold); }
+
+  /* ── Forms ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-field { margin-bottom: 0; }
+  .form-field label { display: block; font-size: 10px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 700; margin-bottom: 6px; }
+  .form-full { grid-column: 1 / -1; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--bg2); border: 1px solid var(--border2); border-top: 3px solid var(--gold); border-radius: 6px; padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 18px; color: var(--gold); letter-spacing: 2px; margin-bottom: 22px; }
+  .modal-btns { display: flex; gap: 10px; margin-top: 20px; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 22px; right: 22px; z-index: 999;
+    padding: 11px 18px; border-radius: 5px; font-family: 'Rajdhani'; font-weight: 700;
+    font-size: 14px; letter-spacing: .05em; display: none; animation: slideUp .2s ease;
+  }
+  #toast.success { background: rgba(61,184,120,.12); border: 1px solid var(--green); color: var(--green); }
+  #toast.error   { background: rgba(224,85,85,.12);  border: 1px solid var(--red);   color: var(--red); }
+  @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  /* ── Pagination ── */
+  .pagination { display: flex; align-items: center; gap: 10px; justify-content: center; margin-top: 18px; }
+  .page-info { font-size: 12px; color: var(--text2); }
+
+  /* ── Economy grid ── */
+  .eco-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .eco-section h3 { font-size: 15px; color: var(--text); margin-bottom: 16px; letter-spacing: 1px; }
+  .eco-field { margin-bottom: 14px; }
+
+  /* ── Card grid ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+  .card-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .card-item-name { font-family: 'Rajdhani'; font-weight: 700; font-size: 16px; }
+  .card-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 12px; }
+  .card-stat { background: var(--bg2); border-radius: 4px; padding: 4px 2px; text-align: center; }
+  .card-stat-key { font-size: 8px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
+  .card-stat-val { font-family: 'Share Tech Mono'; font-size: 13px; color: var(--gold); }
+  .card-actions { display: flex; gap: 8px; }
+  .search-bar { display: flex; gap: 10px; margin-bottom: 18px; }
+  .search-bar input { flex: 1; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
+
+  /* ── Tabs (mobile) ── */
+  @media (max-width: 600px) {
+    .sidebar { display: none; }
+    .topbar { padding: 0 14px; }
+    .main { padding: 16px; }
+    .form-grid { grid-template-columns: 1fr; }
+    .eco-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════ LOGIN ════ -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <span class="icon">⚔️</span>
+      <h1>FIGHT.IO</h1>
+      <p>Admin Dashboard</p>
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="field-label">Supabase URL</label>
+      <input type="text" id="sb-url" placeholder="https://xxx.supabase.co" />
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="field-label">Supabase Service Key</label>
+      <input type="password" id="sb-key" placeholder="service_role key..." />
+    </div>
+    <div style="margin-bottom:18px">
+      <label class="field-label">Admin Password</label>
+      <input type="password" id="admin-pw" placeholder="Your dashboard password" />
+    </div>
+    <div id="login-err" class="err-msg" style="display:none"></div>
+    <button class="btn btn-gold btn-full" onclick="login()">Enter Dashboard</button>
+    <p style="margin-top:20px;color:var(--text3);font-size:11px;text-align:center;letter-spacing:1px">FIGHT.IO © 2025 — RESTRICTED ACCESS</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ APP SHELL ══ -->
+<div id="app">
+  <div class="topbar">
+    <div class="topbar-left">
+      <span style="font-size:18px">⚔️</span>
+      <span class="topbar-logo">FIGHT.IO</span>
+      <span class="topbar-sep">|</span>
+      <span class="topbar-sub">Admin</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span id="top-stats" style="color:var(--text2);font-size:12px"></span>
+      <button class="btn btn-red" style="padding:6px 14px;font-size:12px" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <button class="nav-btn active" onclick="showTab('overview')" id="nav-overview">📊 Overview</button>
+      <button class="nav-btn" onclick="showTab('players')"  id="nav-players" >👥 Players</button>
+      <button class="nav-btn" onclick="showTab('economy')"  id="nav-economy" >💰 Economy</button>
+      <button class="nav-btn" onclick="showTab('cards')"    id="nav-cards"   >🃏 Cards</button>
+    </div>
+
+    <div class="main">
+
+      <!-- ── OVERVIEW ─────────────────────────────────── -->
+      <div id="tab-overview">
+        <div class="section-header"><h2>📊 Overview</h2><div class="line"></div></div>
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card" style="border-top-color:var(--blue)"><div class="stat-label">Total Players</div><div class="stat-value" style="color:var(--blue)" id="s-players">—</div></div>
+          <div class="stat-card" style="border-top-color:var(--green)"><div class="stat-label">Total Matches</div><div class="stat-value" style="color:var(--green)" id="s-matches">—</div></div>
+          <div class="stat-card" style="border-top-color:var(--gold)"><div class="stat-label">Credits in Circulation</div><div class="stat-value" style="color:var(--gold)" id="s-credits">—</div></div>
+          <div class="stat-card" style="border-top-color:var(--text2)"><div class="stat-label">Avg Matches/Player</div><div class="stat-value" style="color:var(--text2)" id="s-avg">—</div></div>
+        </div>
+        <div class="charts-grid">
+          <div class="panel"><h3 style="font-size:13px;color:var(--text2);margin-bottom:14px;letter-spacing:1px">RANK DISTRIBUTION</h3><canvas id="rankChart" height="180"></canvas></div>
+          <div class="panel"><h3 style="font-size:13px;color:var(--text2);margin-bottom:14px;letter-spacing:1px">TOP 5 PLAYERS</h3><div id="top-players"></div></div>
+        </div>
+      </div>
+
+      <!-- ── PLAYERS ──────────────────────────────────── -->
+      <div id="tab-players" style="display:none">
+        <div class="section-header"><h2>👥 Players</h2><div class="line"></div></div>
+        <div class="search-bar">
+          <input type="text" id="player-search" placeholder="Search username or user ID..." oninput="searchPlayers()" />
+          <button class="btn btn-ghost" onclick="loadPlayers()">↺</button>
+        </div>
+        <div class="panel" style="padding:0;overflow:hidden">
+          <table class="tbl">
+            <thead><tr>
+              <th>Username</th><th>Rank</th><th>W</th><th>L</th><th>Credits</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="players-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button class="btn btn-ghost" id="prev-btn" onclick="changePage(-1)" disabled>← Prev</button>
+          <span class="page-info" id="page-info">Page 1</span>
+          <button class="btn btn-ghost" id="next-btn" onclick="changePage(1)">Next →</button>
+        </div>
+      </div>
+
+      <!-- ── ECONOMY ──────────────────────────────────── -->
+      <div id="tab-economy" style="display:none">
+        <div class="section-header"><h2>💰 Economy</h2><div class="line"></div></div>
+        <div class="eco-grid">
+          <div class="panel eco-section">
+            <h3>🏆 Ranked Rewards</h3>
+            <div class="eco-field"><label class="field-label">Win Credits</label><input type="number" id="eco-ranked-win" /></div>
+            <div class="eco-field"><label class="field-label">Loss Credits</label><input type="number" id="eco-ranked-loss" /></div>
+          </div>
+          <div class="panel eco-section">
+            <h3>🎮 Casual Rewards</h3>
+            <div class="eco-field"><label class="field-label">Win Credits</label><input type="number" id="eco-casual-win" /></div>
+            <div class="eco-field"><label class="field-label">Loss Credits</label><input type="number" id="eco-casual-loss" /></div>
+          </div>
+          <div class="panel eco-section">
+            <h3>📅 Daily & Progression</h3>
+            <div class="eco-field"><label class="field-label">Daily Base Credits</label><input type="number" id="eco-daily" /></div>
+            <div class="eco-field"><label class="field-label">Tokens to Rank Up</label><input type="number" id="eco-tokens" /></div>
+          </div>
+          <div class="panel" style="display:flex;flex-direction:column;justify-content:center;gap:12px">
+            <p style="color:var(--text2);font-size:13px;line-height:1.6">Changes apply to new matches after saving. Existing player data is unaffected.</p>
+            <button class="btn btn-gold btn-full" onclick="saveEconomy()">💾 Save All Changes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CARDS ────────────────────────────────────── -->
+      <div id="tab-cards" style="display:none">
+        <div class="section-header"><h2>🃏 Cards</h2><div class="line"></div><button class="btn btn-gold" onclick="openCardModal()">+ New Card</button></div>
+        <div id="cards-container"></div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /app -->
+
+<!-- ── PLAYER EDIT MODAL ──────────────────────────────── -->
+<div class="modal-overlay" id="player-modal">
+  <div class="modal">
+    <h3 id="player-modal-title">Edit Player</h3>
+    <input type="hidden" id="edit-user-id" />
+    <div class="form-grid">
+      <div class="form-field"><label>Credits</label><input type="number" id="edit-credits" /></div>
+      <div class="form-field"><label>Rank Tokens</label><input type="number" id="edit-tokens" /></div>
+      <div class="form-field"><label>Wins</label><input type="number" id="edit-wins" /></div>
+      <div class="form-field"><label>Losses</label><input type="number" id="edit-losses" /></div>
+      <div class="form-field form-full"><label>Rank</label>
+        <select id="edit-rank">
+          <option>Bronze</option><option>Silver</option><option>Gold</option>
+          <option>Platinum</option><option>Diamond</option><option>Apex</option><option>Legend</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-gold" style="flex:1" onclick="savePlayer()">Save Changes</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('player-modal')">Cancel</button>
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn btn-red btn-full" onclick="deletePlayer()">🗑 Delete Player</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CARD EDIT MODAL ────────────────────────────────── -->
+<div class="modal-overlay" id="card-modal">
+  <div class="modal">
+    <h3 id="card-modal-title">New Card</h3>
+    <input type="hidden" id="card-edit-id-orig" />
+    <div class="form-grid">
+      <div class="form-field"><label>Card ID</label><input type="text" id="card-id" placeholder="e.g. lion" /></div>
+      <div class="form-field"><label>Name</label><input type="text" id="card-name" /></div>
+      <div class="form-field"><label>Tier</label>
+        <select id="card-tier"><option>Basic</option><option>Elite</option><option>Ultra</option></select>
+      </div>
+      <div class="form-field"><label>Type</label>
+        <select id="card-type"><option>Titan</option><option>Storm</option><option>Inferno</option><option>Shadow</option><option>Primal</option><option>Curse</option></select>
+      </div>
+      <div class="form-field"><label>Price (cr)</label><input type="number" id="card-price" /></div>
+      <div class="form-field"><label>Emoji</label><input type="text" id="card-emoji" placeholder="<:wolf:123>" /></div>
+      <div class="form-field form-full"><label>Description</label><textarea id="card-desc" rows="2"></textarea></div>
+    </div>
+    <p style="font-size:11px;color:var(--text2);margin:14px 0 10px;letter-spacing:1px;text-transform:uppercase;font-family:Rajdhani;font-weight:700">Stats</p>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px">
+      <div class="form-field"><label>HP</label><input type="number" id="cs-hp" /></div>
+      <div class="form-field"><label>ATK</label><input type="number" id="cs-attack" /></div>
+      <div class="form-field"><label>DEF</label><input type="number" id="cs-defence" /></div>
+      <div class="form-field"><label>SPD</label><input type="number" id="cs-speed" /></div>
+      <div class="form-field"><label>AGI</label><input type="number" id="cs-agility" /></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-gold" style="flex:1" onclick="saveCard()">Save Card</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('card-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ──────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// CONFIG — set your password here
+// ══════════════════════════════════════════════════════════
+const ADMIN_PASSWORD = 'CHANGE_ME'; // <-- set your password
+const RANKS = ['Bronze','Silver','Gold','Platinum','Diamond','Apex','Legend'];
+const RANK_COLORS = { Bronze:'#cd7f32', Silver:'#c0c0c0', Gold:'#ffd700', Platinum:'#e5e4e2', Diamond:'#b9f2ff', Apex:'#ff6b6b', Legend:'#ffd700' };
+
+let sb = null;
+let allPlayers = [];
+let filteredPlayers = [];
+let currentPage = 1;
+const PAGE_SIZE = 20;
+let rankChart = null;
+let cardIsNew = false;
+
+// ── Login ──────────────────────────────────────────────
+function login() {
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  const pw  = document.getElementById('admin-pw').value;
+  const err = document.getElementById('login-err');
+
+  if (pw !== ADMIN_PASSWORD) {
+    err.textContent = '⚠ Invalid password'; err.style.display = 'block'; return;
+  }
+  if (!url || !key) {
+    err.textContent = '⚠ Enter Supabase URL and key'; err.style.display = 'block'; return;
+  }
+
+  sb = supabase.createClient(url, key);
+  // Save to session so page refresh doesn't log out
+  sessionStorage.setItem('sb_url', url);
+  sessionStorage.setItem('sb_key', key);
+
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  init();
+}
+
+function logout() {
+  sessionStorage.clear(); sb = null;
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+}
+
+// Auto-restore session
+window.onload = () => {
+  const url = sessionStorage.getItem('sb_url');
+  const key = sessionStorage.getItem('sb_key');
+  if (url && key) {
+    document.getElementById('sb-url').value = url;
+    document.getElementById('sb-key').value = key;
+    document.getElementById('admin-pw').value = ADMIN_PASSWORD;
+    login();
+  }
+};
+
+// ── Init ───────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards()]);
+}
+
+// ── Tab navigation ─────────────────────────────────────
+function showTab(tab) {
+  ['overview','players','economy','cards'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
+  });
+}
+
+// ── Toast ──────────────────────────────────────────────
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = (type === 'success' ? '✓ ' : '⚠ ') + msg;
+  el.className = type; el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ── Modal helpers ──────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ══════════════════════════════════════════════════════════
+// OVERVIEW
+// ══════════════════════════════════════════════════════════
+async function loadOverview() {
+  const { data: players } = await sb.from('players').select('*');
+  if (!players) return;
+
+  const total = players.length;
+  const matches = Math.floor(players.reduce((s,p) => s + (p.total_matches||0), 0) / 2);
+  const credits = players.reduce((s,p) => s + (p.credits||0), 0);
+
+  document.getElementById('s-players').textContent = total.toLocaleString();
+  document.getElementById('s-matches').textContent = matches.toLocaleString();
+  document.getElementById('s-credits').textContent = credits >= 1e6 ? `${(credits/1e6).toFixed(1)}M` : credits >= 1000 ? `${Math.floor(credits/1000)}K` : credits;
+  document.getElementById('s-avg').textContent = total ? Math.floor((matches * 2) / total) : 0;
+  document.getElementById('top-stats').textContent = `${total} players · ${matches} matches`;
+
+  // Rank chart
+  const rankCounts = RANKS.map(r => players.filter(p => p.rank === r).length);
+  if (rankChart) rankChart.destroy();
+  rankChart = new Chart(document.getElementById('rankChart'), {
+    type: 'bar',
+    data: {
+      labels: RANKS,
+      datasets: [{ data: rankCounts, backgroundColor: RANKS.map(r => RANK_COLORS[r]), borderRadius: 3 }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#6a88a8', font: { size: 10 } }, grid: { color: '#1a2436' } },
+        y: { ticks: { color: '#6a88a8', font: { size: 10 } }, grid: { color: '#1a2436' } }
+      }
+    }
+  });
+
+  // Top 5 players
+  const top5 = [...players].sort((a,b) => b.wins - a.wins).slice(0,5);
+  document.getElementById('top-players').innerHTML = top5.map((p,i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="color:var(--text3);font-family:'Share Tech Mono';font-size:12px">#${i+1}</span>
+        <span style="font-weight:500">${p.username}</span>
+        <span class="rank-badge" style="color:${RANK_COLORS[p.rank]}">${p.rank}</span>
+      </div>
+      <span style="color:var(--green);font-family:'Share Tech Mono';font-size:13px">${p.wins}W</span>
+    </div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// PLAYERS
+// ══════════════════════════════════════════════════════════
+async function loadPlayers() {
+  const { data } = await sb.from('players').select('*').order('created_at', { ascending: false });
+  allPlayers = data || [];
+  filteredPlayers = allPlayers;
+  currentPage = 1;
+  renderPlayers();
+}
+
+function searchPlayers() {
+  const q = document.getElementById('player-search').value.toLowerCase();
+  filteredPlayers = q
+    ? allPlayers.filter(p => p.username?.toLowerCase().includes(q) || p.user_id?.includes(q))
+    : allPlayers;
+  currentPage = 1;
+  renderPlayers();
+}
+
+function renderPlayers() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page  = filteredPlayers.slice(start, start + PAGE_SIZE);
+  const total = filteredPlayers.length;
+  const pages = Math.ceil(total / PAGE_SIZE) || 1;
+
+  document.getElementById('page-info').textContent = `Page ${currentPage} / ${pages} (${total} players)`;
+  document.getElementById('prev-btn').disabled = currentPage <= 1;
+  document.getElementById('next-btn').disabled = currentPage >= pages;
+
+  document.getElementById('players-tbody').innerHTML = page.map(p => `
+    <tr>
+      <td><span style="font-weight:500">${p.username}</span><br><span class="mono" style="font-size:11px;color:var(--text3)">${p.user_id}</span></td>
+      <td><span class="rank-badge" style="color:${RANK_COLORS[p.rank]}">${p.rank}</span></td>
+      <td class="mono" style="color:var(--green)">${p.wins}</td>
+      <td class="mono" style="color:var(--red)">${p.losses}</td>
+      <td class="mono" style="color:var(--gold)">${(p.credits||0).toLocaleString()}</td>
+      <td><button class="btn btn-blue" style="padding:5px 12px;font-size:12px" onclick='openPlayerEdit(${JSON.stringify(p)})'>Edit</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">No players found</td></tr>';
+}
+
+function changePage(dir) {
+  const pages = Math.ceil(filteredPlayers.length / PAGE_SIZE) || 1;
+  currentPage = Math.max(1, Math.min(pages, currentPage + dir));
+  renderPlayers();
+}
+
+function openPlayerEdit(p) {
+  document.getElementById('player-modal-title').textContent = `Edit — ${p.username}`;
+  document.getElementById('edit-user-id').value   = p.user_id;
+  document.getElementById('edit-credits').value   = p.credits || 0;
+  document.getElementById('edit-tokens').value    = p.rank_tokens || 0;
+  document.getElementById('edit-wins').value      = p.wins || 0;
+  document.getElementById('edit-losses').value    = p.losses || 0;
+  document.getElementById('edit-rank').value      = p.rank || 'Bronze';
+  openModal('player-modal');
+}
+
+async function savePlayer() {
+  const userId = document.getElementById('edit-user-id').value;
+  const updates = {
+    credits:      parseInt(document.getElementById('edit-credits').value),
+    rank_tokens:  parseInt(document.getElementById('edit-tokens').value),
+    wins:         parseInt(document.getElementById('edit-wins').value),
+    losses:       parseInt(document.getElementById('edit-losses').value),
+    rank:         document.getElementById('edit-rank').value,
+  };
+  const { error } = await sb.from('players').update(updates).eq('user_id', userId);
+  if (error) { toast('Update failed: ' + error.message, 'error'); return; }
+  toast('Player updated!');
+  closeModal('player-modal');
+  loadPlayers();
+  loadOverview();
+}
+
+async function deletePlayer() {
+  if (!confirm('Permanently delete this player?')) return;
+  const userId = document.getElementById('edit-user-id').value;
+  const { error } = await sb.from('players').delete().eq('user_id', userId);
+  if (error) { toast('Delete failed', 'error'); return; }
+  toast('Player deleted');
+  closeModal('player-modal');
+  loadPlayers();
+  loadOverview();
+}
+
+// ══════════════════════════════════════════════════════════
+// ECONOMY
+// ══════════════════════════════════════════════════════════
+async function loadEconomy() {
+  const { data } = await sb.from('config').select('*');
+  const cfg = {};
+  for (const row of data || []) cfg[row.key] = row.value;
+
+  const defaults = { ranked_win_credits:1000, ranked_loss_credits:300, casual_win_credits:500, casual_loss_credits:150, daily_base:500, tokens_to_rankup:3 };
+  const merged = { ...defaults, ...cfg };
+
+  document.getElementById('eco-ranked-win').value  = merged.ranked_win_credits;
+  document.getElementById('eco-ranked-loss').value = merged.ranked_loss_credits;
+  document.getElementById('eco-casual-win').value  = merged.casual_win_credits;
+  document.getElementById('eco-casual-loss').value = merged.casual_loss_credits;
+  document.getElementById('eco-daily').value        = merged.daily_base;
+  document.getElementById('eco-tokens').value       = merged.tokens_to_rankup;
+}
+
+async function saveEconomy() {
+  const fields = [
+    ['ranked_win_credits',  'eco-ranked-win'],
+    ['ranked_loss_credits', 'eco-ranked-loss'],
+    ['casual_win_credits',  'eco-casual-win'],
+    ['casual_loss_credits', 'eco-casual-loss'],
+    ['daily_base',          'eco-daily'],
+    ['tokens_to_rankup',    'eco-tokens'],
+  ];
+  for (const [key, elId] of fields) {
+    const value = parseInt(document.getElementById(elId).value);
+    await sb.from('config').upsert({ key, value }, { onConflict: 'key' });
+  }
+  toast('Economy settings saved!');
+}
+
+// ══════════════════════════════════════════════════════════
+// CARDS
+// ══════════════════════════════════════════════════════════
+async function loadCards() {
+  const { data } = await sb.from('cards').select('*').order('tier').order('name');
+  const cards = data || [];
+  const tiers = ['Basic', 'Elite', 'Ultra'];
+  const tierColors = { Basic: 'var(--text2)', Elite: 'var(--blue)', Ultra: 'var(--gold)' };
+
+  document.getElementById('cards-container').innerHTML = cards.length === 0
+    ? `<div class="panel" style="text-align:center;padding:48px;color:var(--text2)">No cards in Supabase yet. Click "+ New Card" to add one.<br><br><span style="font-size:12px;color:var(--text3)">See SETUP.md for syncing with your bot's data.js</span></div>`
+    : tiers.map(tier => {
+        const tc = cards.filter(c => c.tier === tier);
+        if (!tc.length) return '';
+        return `
+          <div style="margin-bottom:24px">
+            <p style="font-size:11px;color:${tierColors[tier]};letter-spacing:3px;text-transform:uppercase;font-family:Rajdhani;font-weight:700;margin-bottom:12px">── ${tier} Tier ──</p>
+            <div class="card-grid">
+              ${tc.map(card => `
+                <div class="card-item">
+                  <div class="card-item-header">
+                    <div><span style="font-size:18px;margin-right:6px">${card.emoji||''}</span><span class="card-item-name">${card.name}</span></div>
+                    <span class="tier-badge tier-${card.tier}">${card.type||''}</span>
+                  </div>
+                  <div class="card-stats">
+                    ${['hp','attack','defence','speed','agility'].map(s => `
+                      <div class="card-stat">
+                        <div class="card-stat-key">${s.slice(0,3)}</div>
+                        <div class="card-stat-val">${card.stats?.[s]||0}</div>
+                      </div>`).join('')}
+                  </div>
+                  <div class="card-actions">
+                    <button class="btn btn-blue" style="flex:1;padding:6px;font-size:12px" onclick='openCardModal(${JSON.stringify(card)})'>Edit</button>
+                    <button class="btn btn-red" style="flex:1;padding:6px;font-size:12px" onclick="deleteCard('${card.id}')">Delete</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>`;
+      }).join('');
+}
+
+function openCardModal(card) {
+  cardIsNew = !card;
+  document.getElementById('card-modal-title').textContent = card ? `Edit — ${card.name}` : 'New Card';
+  document.getElementById('card-edit-id-orig').value = card?.id || '';
+  document.getElementById('card-id').value      = card?.id || '';
+  document.getElementById('card-id').disabled   = !!card;
+  document.getElementById('card-name').value    = card?.name || '';
+  document.getElementById('card-tier').value    = card?.tier || 'Basic';
+  document.getElementById('card-type').value    = card?.type || 'Storm';
+  document.getElementById('card-price').value   = card?.price || 10000;
+  document.getElementById('card-emoji').value   = card?.emoji || '';
+  document.getElementById('card-desc').value    = card?.description || '';
+  document.getElementById('cs-hp').value        = card?.stats?.hp || 50;
+  document.getElementById('cs-attack').value    = card?.stats?.attack || 50;
+  document.getElementById('cs-defence').value   = card?.stats?.defence || 50;
+  document.getElementById('cs-speed').value     = card?.stats?.speed || 50;
+  document.getElementById('cs-agility').value   = card?.stats?.agility || 50;
+  openModal('card-modal');
+}
+
+async function saveCard() {
+  const id = document.getElementById('card-id').value.trim();
+  if (!id) { toast('Card ID is required', 'error'); return; }
+  const payload = {
+    id,
+    name:        document.getElementById('card-name').value,
+    tier:        document.getElementById('card-tier').value,
+    type:        document.getElementById('card-type').value,
+    price:       parseInt(document.getElementById('card-price').value),
+    emoji:       document.getElementById('card-emoji').value,
+    description: document.getElementById('card-desc').value,
+    stats: {
+      hp:      parseInt(document.getElementById('cs-hp').value),
+      attack:  parseInt(document.getElementById('cs-attack').value),
+      defence: parseInt(document.getElementById('cs-defence').value),
+      speed:   parseInt(document.getElementById('cs-speed').value),
+      agility: parseInt(document.getElementById('cs-agility').value),
+    }
+  };
+  const { error } = await sb.from('cards').upsert(payload, { onConflict: 'id' });
+  if (error) { toast('Save failed: ' + error.message, 'error'); return; }
+  toast(cardIsNew ? 'Card created!' : 'Card updated!');
+  closeModal('card-modal');
+  loadCards();
+}
+
+async function deleteCard(id) {
+  if (!confirm(`Delete card "${id}"?`)) return;
+  const { error } = await sb.from('cards').delete().eq('id', id);
+  if (error) { toast('Delete failed', 'error'); return; }
+  toast('Card deleted');
+  loadCards();
+}
+</script>
+</body>
+</html>
