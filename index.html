@@ -5,7 +5,118 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fight.io — Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+// ── Events ─────────────────────────────────────────────
+
+async function loadEvents() {
+  await loadActiveEvent();
+}
+
+async function loadActiveEvent() {
+  const panel = document.getElementById('active-event-content');
+  const storeDiv = document.getElementById('event-store-content');
+  const lbDiv = document.getElementById('event-leaderboard-content');
+
+  const { data, error } = await db.from('active_event').select('*').eq('key','current').single();
+
+  if (error || !data) {
+    panel.innerHTML = '<span style="color:var(--text2)">No event currently running.</span>';
+    storeDiv.innerHTML = '<span style="color:var(--text2)">No active event.</span>';
+    lbDiv.innerHTML = '<span style="color:var(--text2)">No active event.</span>';
+    return;
+  }
+
+  const now = new Date();
+  const ends = new Date(data.ends_at);
+  const msLeft = ends - now;
+  const dLeft = Math.floor(msLeft / 86400000);
+  const hLeft = Math.floor((msLeft % 86400000) / 3600000);
+  const timeStr = msLeft <= 0 ? '<span style="color:var(--red)">EXPIRED</span>'
+    : `<span style="color:var(--green)">${dLeft}d ${hLeft}h remaining</span>`;
+
+  panel.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:18px">
+      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Event ID</div>
+           <div style="color:var(--gold);font-size:18px;font-family:'Rajdhani',sans-serif;font-weight:700">${data.event_id}</div></div>
+      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Time Left</div>
+           <div style="font-size:16px;font-family:'Rajdhani',sans-serif;font-weight:700">${timeStr}</div></div>
+      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Started</div>
+           <div style="font-size:13px">${new Date(data.started_at).toLocaleDateString()}</div></div>
+    </div>
+    <button class="btn btn-red" onclick="endEvent('${data.event_id}')">⏹ End Event Now</button>
+  `;
+
+  // Load EP leaderboard
+  const { data: epData } = await db.from('event_progress')
+    .select('user_id, ep, total_ep_earned, purchased_cards')
+    .eq('event_id', data.event_id)
+    .order('total_ep_earned', { ascending: false })
+    .limit(10);
+
+  if (epData && epData.length > 0) {
+    const rows = epData.map((r, i) => `
+      <tr>
+        <td style="color:var(--text2)">#${i+1}</td>
+        <td>${r.user_id}</td>
+        <td style="color:var(--green)">${r.total_ep_earned} EP</td>
+        <td style="color:var(--gold)">${r.ep} EP</td>
+        <td>${Array.isArray(r.purchased_cards) ? r.purchased_cards.join(', ') || '—' : '—'}</td>
+      </tr>`).join('');
+    lbDiv.innerHTML = `
+      <table class="tbl">
+        <thead><tr><th>#</th><th>User ID</th><th>Total Earned</th><th>Balance</th><th>Cards Bought</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } else {
+    lbDiv.innerHTML = '<span style="color:var(--text2)">No progress data yet.</span>';
+  }
+
+  storeDiv.innerHTML = '<span style="color:var(--text2)">Store items are defined in the event config file.</span>';
+}
+
+async function startEvent() {
+  const eventId = document.getElementById('event-id-input').value.trim();
+  const days    = parseInt(document.getElementById('event-days-input').value);
+  const msg     = document.getElementById('event-start-msg');
+
+  if (!eventId || !days) { toast('Fill in event ID and duration', true); return; }
+
+  // Check if event already running
+  const { data: existing } = await db.from('active_event').select('*').eq('key','current').single();
+  if (existing) {
+    toast('An event is already running. End it first.', true);
+    return;
+  }
+
+  const endsAt = new Date();
+  endsAt.setDate(endsAt.getDate() + days);
+
+  const { error } = await db.from('active_event').upsert({
+    key: 'current',
+    event_id: eventId,
+    started_at: new Date().toISOString(),
+    ends_at: endsAt.toISOString(),
+  });
+
+  if (error) { toast('Failed: ' + error.message, true); return; }
+
+  msg.style.display = 'block';
+  msg.textContent = `✅ Event "${eventId}" started for ${days} days!`;
+  toast(`Event "${eventId}" is now live!`);
+  await loadActiveEvent();
+}
+
+async function endEvent(eventId) {
+  if (!confirm(`End event "${eventId}" now? This cannot be undone.`)) return;
+
+  const { error } = await db.from('active_event').delete().eq('key','current');
+  if (error) { toast('Failed: ' + error.message, true); return; }
+
+  toast('Event ended.');
+  await loadActiveEvent();
+}
+
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root {
@@ -228,6 +339,7 @@
       <button class="nav-btn" onclick="showTab('players')"  id="nav-players" >👥 Players</button>
       <button class="nav-btn" onclick="showTab('economy')"  id="nav-economy" >💰 Economy</button>
       <button class="nav-btn" onclick="showTab('cards')"    id="nav-cards"   >🃏 Cards</button>
+      <button class="nav-btn" onclick="showTab('events')"   id="nav-events"  >🐍 Events</button>
     </div>
 
     <div class="main">
@@ -296,6 +408,47 @@
       </div>
 
       <!-- ── CARDS ────────────────────────────────────── -->
+
+      <!-- ── EVENTS TAB ── -->
+      <div id="tab-events" style="display:none">
+        <div class="section-header"><h2>🐍 Events</h2><div class="line"></div></div>
+
+        <!-- Active Event Panel -->
+        <div class="panel" id="active-event-panel" style="margin-bottom:18px">
+          <h3 style="font-size:15px;color:var(--gold);margin-bottom:16px;letter-spacing:1px">⚡ Active Event</h3>
+          <div id="active-event-content" style="color:var(--text2)">Loading...</div>
+        </div>
+
+        <!-- Start Event -->
+        <div class="panel" style="margin-bottom:18px">
+          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🚀 Start an Event</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:12px;align-items:end">
+            <div>
+              <label class="field-label">Event Config ID</label>
+              <input type="text" id="event-id-input" placeholder="e.g. venom_expansion" />
+            </div>
+            <div>
+              <label class="field-label">Duration (days)</label>
+              <input type="number" id="event-days-input" value="7" min="1" max="30" />
+            </div>
+            <button class="btn btn-gold" onclick="startEvent()">▶ Start</button>
+          </div>
+          <div id="event-start-msg" style="margin-top:10px;font-size:13px;color:var(--green);display:none"></div>
+        </div>
+
+        <!-- Event Store Viewer -->
+        <div class="panel" style="margin-bottom:18px">
+          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🛒 Event Store Preview</h3>
+          <div id="event-store-content" style="color:var(--text2)">No active event.</div>
+        </div>
+
+        <!-- Top EP Leaderboard -->
+        <div class="panel">
+          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🏆 EP Leaderboard</h3>
+          <div id="event-leaderboard-content" style="color:var(--text2)">No active event.</div>
+        </div>
+      </div>
+
       <div id="tab-cards" style="display:none">
         <div class="section-header"><h2>🃏 Cards</h2><div class="line"></div><button class="btn btn-gold" onclick="openCardModal()">+ New Card</button></div>
         <div id="cards-container"></div>
@@ -428,12 +581,12 @@ window.onload = () => {
 
 // ── Init ───────────────────────────────────────────────
 async function init() {
-  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards()]);
+  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards(), loadEvents()]);
 }
 
 // ── Tab navigation ─────────────────────────────────────
 function showTab(tab) {
-  ['overview','players','economy','cards'].forEach(t => {
+  ['overview','players','economy','cards','events'].forEach(t => {
     document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
     document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
   });
