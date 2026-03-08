@@ -4,296 +4,140 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fight.io — Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-// ── Events ─────────────────────────────────────────────
-
-async function loadEvents() {
-  await loadActiveEvent();
-}
-
-async function loadActiveEvent() {
-  const panel = document.getElementById('active-event-content');
-  const storeDiv = document.getElementById('event-store-content');
-  const lbDiv = document.getElementById('event-leaderboard-content');
-
-  const { data, error } = await db.from('active_event').select('*').eq('key','current').single();
-
-  if (error || !data) {
-    panel.innerHTML = '<span style="color:var(--text2)">No event currently running.</span>';
-    storeDiv.innerHTML = '<span style="color:var(--text2)">No active event.</span>';
-    lbDiv.innerHTML = '<span style="color:var(--text2)">No active event.</span>';
-    return;
-  }
-
-  const now = new Date();
-  const ends = new Date(data.ends_at);
-  const msLeft = ends - now;
-  const dLeft = Math.floor(msLeft / 86400000);
-  const hLeft = Math.floor((msLeft % 86400000) / 3600000);
-  const timeStr = msLeft <= 0 ? '<span style="color:var(--red)">EXPIRED</span>'
-    : `<span style="color:var(--green)">${dLeft}d ${hLeft}h remaining</span>`;
-
-  panel.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:18px">
-      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Event ID</div>
-           <div style="color:var(--gold);font-size:18px;font-family:'Rajdhani',sans-serif;font-weight:700">${data.event_id}</div></div>
-      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Time Left</div>
-           <div style="font-size:16px;font-family:'Rajdhani',sans-serif;font-weight:700">${timeStr}</div></div>
-      <div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Started</div>
-           <div style="font-size:13px">${new Date(data.started_at).toLocaleDateString()}</div></div>
-    </div>
-    <button class="btn btn-red" onclick="endEvent('${data.event_id}')">⏹ End Event Now</button>
-  `;
-
-  // Load EP leaderboard
-  const { data: epData } = await db.from('event_progress')
-    .select('user_id, ep, total_ep_earned, purchased_cards')
-    .eq('event_id', data.event_id)
-    .order('total_ep_earned', { ascending: false })
-    .limit(10);
-
-  if (epData && epData.length > 0) {
-    const rows = epData.map((r, i) => `
-      <tr>
-        <td style="color:var(--text2)">#${i+1}</td>
-        <td>${r.user_id}</td>
-        <td style="color:var(--green)">${r.total_ep_earned} EP</td>
-        <td style="color:var(--gold)">${r.ep} EP</td>
-        <td>${Array.isArray(r.purchased_cards) ? r.purchased_cards.join(', ') || '—' : '—'}</td>
-      </tr>`).join('');
-    lbDiv.innerHTML = `
-      <table class="tbl">
-        <thead><tr><th>#</th><th>User ID</th><th>Total Earned</th><th>Balance</th><th>Cards Bought</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-  } else {
-    lbDiv.innerHTML = '<span style="color:var(--text2)">No progress data yet.</span>';
-  }
-
-  storeDiv.innerHTML = '<span style="color:var(--text2)">Store items are defined in the event config file.</span>';
-}
-
-async function startEvent() {
-  const eventId = document.getElementById('event-id-input').value.trim();
-  const days    = parseInt(document.getElementById('event-days-input').value);
-  const msg     = document.getElementById('event-start-msg');
-
-  if (!eventId || !days) { toast('Fill in event ID and duration', true); return; }
-
-  // Check if event already running
-  const { data: existing } = await db.from('active_event').select('*').eq('key','current').single();
-  if (existing) {
-    toast('An event is already running. End it first.', true);
-    return;
-  }
-
-  const endsAt = new Date();
-  endsAt.setDate(endsAt.getDate() + days);
-
-  const { error } = await db.from('active_event').upsert({
-    key: 'current',
-    event_id: eventId,
-    started_at: new Date().toISOString(),
-    ends_at: endsAt.toISOString(),
-  });
-
-  if (error) { toast('Failed: ' + error.message, true); return; }
-
-  msg.style.display = 'block';
-  msg.textContent = `✅ Event "${eventId}" started for ${days} days!`;
-  toast(`Event "${eventId}" is now live!`);
-  await loadActiveEvent();
-}
-
-async function endEvent(eventId) {
-  if (!confirm(`End event "${eventId}" now? This cannot be undone.`)) return;
-
-  const { error } = await db.from('active_event').delete().eq('key','current');
-  if (error) { toast('Failed: ' + error.message, true); return; }
-
-  toast('Event ended.');
-  await loadActiveEvent();
-}
-
-
-</script>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
-  :root {
-    --bg:      #07090d;
-    --bg2:     #0c1018;
-    --bg3:     #111620;
-    --border:  #1a2436;
-    --border2: #223044;
-    --gold:    #e8a020;
-    --gold2:   #f5c842;
-    --red:     #e05555;
-    --green:   #3db878;
-    --blue:    #4d9fe0;
-    --text:    #ccd8e8;
-    --text2:   #6a88a8;
-    --text3:   #344050;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; min-height: 100vh; }
-  h1,h2,h3,h4,h5,button,label { font-family: 'Rajdhani', sans-serif; }
+:root {
+  --bg:#07090d; --bg2:#0c1018; --bg3:#111620;
+  --border:#1a2436; --border2:#223044;
+  --gold:#e8a020; --gold2:#f5c842;
+  --red:#e05555; --green:#3db878; --blue:#4d9fe0;
+  --text:#ccd8e8; --text2:#6a88a8; --text3:#344050;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh;}
+h1,h2,h3,h4,button,label{font-family:'Rajdhani',sans-serif;}
 
-  /* ── Login ── */
-  #login-screen {
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at 50% -10%, #1a2a14 0%, var(--bg) 55%);
-  }
-  .login-box {
-    width: 360px; padding: 48px 40px;
-    background: var(--bg2); border: 1px solid var(--border); border-top: 3px solid var(--gold);
-    box-shadow: 0 0 80px rgba(232,160,32,.07);
-  }
-  .login-logo { text-align: center; margin-bottom: 36px; }
-  .login-logo .icon { font-size: 44px; display: block; filter: drop-shadow(0 0 18px rgba(232,160,32,.45)); margin-bottom: 10px; }
-  .login-logo h1 { font-size: 30px; color: var(--gold); letter-spacing: 4px; }
-  .login-logo p { color: var(--text2); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin-top: 4px; }
-  .field-label { display: block; font-size: 11px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 600; margin-bottom: 7px; }
-  input, select, textarea {
-    width: 100%; padding: 10px 14px; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border2); border-radius: 4px; font-family: 'DM Sans', sans-serif;
-    font-size: 14px; outline: none; transition: border-color .15s;
-  }
-  input:focus, select:focus, textarea:focus { border-color: var(--gold); }
-  .err-msg { color: var(--red); font-size: 12px; padding: 8px 12px; background: rgba(224,85,85,.08); border: 1px solid rgba(224,85,85,.25); border-radius: 4px; margin-bottom: 14px; }
+/* Login */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% -10%,#1a2a14 0%,var(--bg) 55%);}
+.login-box{width:360px;padding:48px 40px;background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--gold);}
+.login-logo{text-align:center;margin-bottom:36px;}
+.login-logo .icon{font-size:44px;display:block;margin-bottom:10px;}
+.login-logo h1{font-size:30px;color:var(--gold);letter-spacing:4px;}
+.login-logo p{color:var(--text2);font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-top:4px;}
+.field-label{display:block;font-size:11px;letter-spacing:2px;color:var(--text2);text-transform:uppercase;font-weight:600;margin-bottom:7px;}
+input,select,textarea{width:100%;padding:10px 14px;background:var(--bg);color:var(--text);border:1px solid var(--border2);border-radius:4px;font-family:'DM Sans',sans-serif;font-size:14px;outline:none;transition:border-color .15s;}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);}
+.err-msg{color:var(--red);font-size:13px;margin-top:10px;}
 
-  /* ── Buttons ── */
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 20px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; transition: opacity .15s, transform .1s; }
-  .btn:active { transform: scale(.97); }
-  .btn-gold  { background: var(--gold); color: #000; }
-  .btn-blue  { background: rgba(77,159,224,.15); color: var(--blue); border: 1px solid rgba(77,159,224,.3); }
-  .btn-red   { background: rgba(224,85,85,.1); color: var(--red); border: 1px solid rgba(224,85,85,.25); }
-  .btn-ghost { background: var(--bg3); color: var(--text2); border: 1px solid var(--border2); }
-  .btn-full  { width: 100%; padding: 13px; font-size: 14px; }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
+/* App shell */
+#app{display:none;}
+.topbar{height:54px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100;}
+.topbar-logo{font-size:18px;color:var(--gold);letter-spacing:3px;font-weight:700;}
+.topbar-sep{color:var(--border2);margin:0 10px;}
+.topbar-sub{color:var(--text2);font-size:12px;letter-spacing:2px;text-transform:uppercase;}
+.layout{display:flex;min-height:calc(100vh - 54px);}
+.sidebar{width:200px;background:var(--bg2);border-right:1px solid var(--border);padding:18px 0;flex-shrink:0;}
+.nav-btn{display:block;width:100%;text-align:left;padding:11px 20px;background:none;border:none;border-left:3px solid transparent;color:var(--text2);font-size:14px;letter-spacing:1px;cursor:pointer;transition:all .15s;}
+.nav-btn:hover{background:var(--bg3);color:var(--text);}
+.nav-btn.active{background:var(--bg3);color:var(--gold);border-left-color:var(--gold);}
+.main{flex:1;padding:28px;overflow-x:hidden;}
 
-  /* ── Dashboard shell ── */
-  #app { display: none; min-height: 100vh; }
-  .topbar {
-    height: 54px; background: var(--bg2); border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 28px; position: sticky; top: 0; z-index: 40;
-  }
-  .topbar-left { display: flex; align-items: center; gap: 14px; }
-  .topbar-logo { font-size: 22px; color: var(--gold); letter-spacing: 3px; }
-  .topbar-sep { color: var(--border2); font-size: 18px; }
-  .topbar-sub { color: var(--text2); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; }
-  .layout { display: flex; min-height: calc(100vh - 54px); }
+/* Panels */
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:20px;margin-bottom:16px;}
+.section-header{display:flex;align-items:center;gap:14px;margin-bottom:22px;flex-wrap:wrap;}
+.section-header h2{font-size:19px;color:var(--gold);letter-spacing:2px;white-space:nowrap;}
+.section-header .line{flex:1;height:1px;background:var(--border);}
 
-  /* ── Sidebar ── */
-  .sidebar { width: 190px; background: var(--bg2); border-right: 1px solid var(--border); padding: 20px 0; flex-shrink: 0; }
-  .nav-btn {
-    display: block; width: 100%; padding: 11px 22px; background: transparent;
-    color: var(--text2); font-size: 14px; text-align: left; border: none;
-    border-left: 3px solid transparent; cursor: pointer; transition: all .15s;
-    font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-  }
-  .nav-btn:hover { background: var(--bg3); color: var(--text); }
-  .nav-btn.active { background: var(--bg3); color: var(--gold); border-left-color: var(--gold); }
-  .main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border:none;border-radius:4px;font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:600;letter-spacing:1px;cursor:pointer;transition:opacity .15s;}
+.btn:hover{opacity:.85;}
+.btn-gold{background:var(--gold);color:#000;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-blue{background:var(--blue);color:#fff;}
+.btn-ghost{background:var(--bg3);color:var(--text);border:1px solid var(--border2);}
+.btn-full{width:100%;}
 
-  /* ── Section header ── */
-  .section-header { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
-  .section-header h2 { font-size: 19px; color: var(--gold); letter-spacing: 2px; white-space: nowrap; }
-  .section-header .line { flex: 1; height: 1px; background: var(--border); }
+/* Stats grid */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--border2);border-radius:6px;padding:18px;}
+.stat-label{font-size:11px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;}
+.stat-value{font-size:28px;font-weight:700;font-family:'Rajdhani',sans-serif;}
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 
-  /* ── Cards/panels ── */
-  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 22px; margin-bottom: 16px; }
-  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .stat-card { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 18px 20px; border-top-width: 2px; }
-  .stat-label { font-size: 10px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 700; }
-  .stat-value { font-size: 30px; font-family: 'Rajdhani', sans-serif; font-weight: 700; margin: 3px 0; }
-  .stat-sub { font-size: 12px; color: var(--text2); }
-  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
-  @media (max-width: 700px) { .charts-grid { grid-template-columns: 1fr; } .stat-grid { grid-template-columns: 1fr 1fr; } }
+/* Tables */
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{text-align:left;padding:10px 14px;font-size:11px;color:var(--text2);letter-spacing:2px;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:600;}
+.tbl td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:var(--bg3);}
 
-  /* ── Table ── */
-  .tbl { width: 100%; border-collapse: collapse; }
-  .tbl th { padding: 9px 12px; text-align: left; font-size: 10px; color: var(--text2); letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid var(--border); font-weight: 700; }
-  .tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  .tbl tr:hover td { background: var(--bg3); }
-  .tbl tr:last-child td { border-bottom: none; }
-  .mono { font-family: 'Share Tech Mono', monospace; }
+/* Search bar */
+.search-bar{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.search-bar input{flex:1;min-width:160px;}
 
-  /* ── Badges ── */
-  .rank-badge { font-family: 'Rajdhani'; font-weight: 700; font-size: 13px; }
-  .tier-badge { font-size: 10px; font-family: 'Rajdhani'; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 2px 8px; border-radius: 3px; }
-  .tier-Basic  { background: rgba(106,136,168,.15); color: var(--text2); }
-  .tier-Elite  { background: rgba(77,159,224,.15); color: var(--blue); }
-  .tier-Ultra  { background: rgba(232,160,32,.15); color: var(--gold); }
+/* Pagination */
+.pagination{display:flex;align-items:center;gap:12px;margin-top:14px;justify-content:center;}
+.page-info{color:var(--text2);font-size:13px;}
 
-  /* ── Forms ── */
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .form-field { margin-bottom: 0; }
-  .form-field label { display: block; font-size: 10px; letter-spacing: 2px; color: var(--text2); text-transform: uppercase; font-weight: 700; margin-bottom: 6px; }
-  .form-full { grid-column: 1 / -1; }
+/* Cards grid */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
+.card-item{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px;cursor:pointer;transition:border-color .15s;}
+.card-item:hover{border-color:var(--border2);}
+.card-item-name{font-size:16px;font-weight:700;font-family:'Rajdhani',sans-serif;}
+.card-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-top:10px;}
+.card-stat{text-align:center;background:var(--bg);border-radius:3px;padding:4px 2px;}
+.card-stat-key{font-size:9px;color:var(--text2);letter-spacing:1px;text-transform:uppercase;}
+.card-stat-val{font-size:14px;font-weight:700;font-family:'Rajdhani',sans-serif;color:var(--gold);}
+.tier-badge{font-size:10px;padding:2px 7px;border-radius:3px;font-family:'Rajdhani',sans-serif;font-weight:700;letter-spacing:1px;}
+.tier-Basic{background:#2a3040;color:var(--text2);}
+.tier-Elite{background:#1a2840;color:var(--blue);}
+.tier-Ultra{background:#2a1e10;color:var(--gold);}
 
-  /* ── Modal ── */
-  .modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200;
-    display: none; align-items: center; justify-content: center; padding: 20px;
-  }
-  .modal-overlay.open { display: flex; }
-  .modal { background: var(--bg2); border: 1px solid var(--border2); border-top: 3px solid var(--gold); border-radius: 6px; padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
-  .modal h3 { font-size: 18px; color: var(--gold); letter-spacing: 2px; margin-bottom: 22px; }
-  .modal-btns { display: flex; gap: 10px; margin-top: 20px; }
+/* Card detail expand */
+.card-detail{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+.card-detail.open{display:block;}
+.detail-row{display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px;}
+.detail-row .dk{color:var(--text2);}
+.detail-row .dv{color:var(--text);text-align:right;max-width:55%;}
+.movelist{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;}
+.move-pill{background:var(--bg);border:1px solid var(--border2);border-radius:3px;padding:2px 7px;font-size:11px;color:var(--text2);font-family:monospace;}
+.move-pill.sig{border-color:var(--gold);color:var(--gold);}
+.subsection-label{font-size:10px;color:var(--text2);letter-spacing:1px;text-transform:uppercase;margin:10px 0 4px;}
 
-  /* ── Toast ── */
-  #toast {
-    position: fixed; bottom: 22px; right: 22px; z-index: 999;
-    padding: 11px 18px; border-radius: 5px; font-family: 'Rajdhani'; font-weight: 700;
-    font-size: 14px; letter-spacing: .05em; display: none; animation: slideUp .2s ease;
-  }
-  #toast.success { background: rgba(61,184,120,.12); border: 1px solid var(--green); color: var(--green); }
-  #toast.error   { background: rgba(224,85,85,.12);  border: 1px solid var(--red);   color: var(--red); }
-  @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* Moves table specific */
+.cat-Physical{color:#e05555;}
+.cat-Special{color:#4d9fe0;}
+.cat-Status,.cat-Support{color:#8e7fd4;}
+.sig-badge{background:var(--gold);color:#000;font-size:10px;padding:1px 5px;border-radius:2px;font-family:'Rajdhani',sans-serif;font-weight:700;margin-left:4px;vertical-align:middle;}
 
-  /* ── Pagination ── */
-  .pagination { display: flex; align-items: center; gap: 10px; justify-content: center; margin-top: 18px; }
-  .page-info { font-size: 12px; color: var(--text2); }
+/* Economy */
+.eco-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.form-field label{display:block;font-size:11px;color:var(--text2);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px;font-family:'Rajdhani',sans-serif;font-weight:600;}
+.form-full{grid-column:1/-1;}
 
-  /* ── Economy grid ── */
-  .eco-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .eco-section h3 { font-size: 15px; color: var(--text); margin-bottom: 16px; letter-spacing: 1px; }
-  .eco-field { margin-bottom: 14px; }
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--bg2);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:6px;padding:28px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;}
+.modal h3{font-size:18px;color:var(--gold);letter-spacing:2px;margin-bottom:20px;}
+.modal-btns{display:flex;gap:10px;margin-top:20px;}
 
-  /* ── Card grid ── */
-  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-  .card-item { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-  .card-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-  .card-item-name { font-family: 'Rajdhani'; font-weight: 700; font-size: 16px; }
-  .card-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 12px; }
-  .card-stat { background: var(--bg2); border-radius: 4px; padding: 4px 2px; text-align: center; }
-  .card-stat-key { font-size: 8px; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
-  .card-stat-val { font-family: 'Share Tech Mono'; font-size: 13px; color: var(--gold); }
-  .card-actions { display: flex; gap: 8px; }
-  .search-bar { display: flex; gap: 10px; margin-bottom: 18px; }
-  .search-bar input { flex: 1; }
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;padding:12px 20px;background:var(--green);color:#fff;border-radius:4px;font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:600;letter-spacing:1px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none;}
+#toast.show{opacity:1;}
+#toast.err{background:var(--red);}
 
-  /* ── Scrollbar ── */
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: var(--bg2); }
-  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--gold); }
-
-  /* ── Tabs (mobile) ── */
-  @media (max-width: 600px) {
-    .sidebar { display: none; }
-    .topbar { padding: 0 14px; }
-    .main { padding: 16px; }
-    .form-grid { grid-template-columns: 1fr; }
-    .eco-grid { grid-template-columns: 1fr; }
-  }
+/* Event specific */
+.ep-bar{background:var(--bg);border-radius:3px;height:8px;overflow:hidden;margin-top:4px;}
+.ep-fill{background:var(--green);height:100%;border-radius:3px;transition:width .3s;}
 </style>
 </head>
 <body>
 
-<!-- ════════════════════════════════════════════ LOGIN ════ -->
+<!-- LOGIN -->
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
@@ -311,45 +155,44 @@ async function endEvent(eventId) {
     </div>
     <div style="margin-bottom:18px">
       <label class="field-label">Admin Password</label>
-      <input type="password" id="admin-pw" placeholder="Your dashboard password" />
+      <input type="password" id="admin-pw" placeholder="Password" onkeydown="if(event.key==='Enter')login()" />
     </div>
     <div id="login-err" class="err-msg" style="display:none"></div>
     <button class="btn btn-gold btn-full" onclick="login()">Enter Dashboard</button>
-    <p style="margin-top:20px;color:var(--text3);font-size:11px;text-align:center;letter-spacing:1px">FIGHT.IO © 2025 — RESTRICTED ACCESS</p>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════ APP SHELL ══ -->
+<!-- APP -->
 <div id="app">
   <div class="topbar">
-    <div class="topbar-left">
-      <span style="font-size:18px">⚔️</span>
+    <div style="display:flex;align-items:center">
+      <span style="font-size:18px;margin-right:10px">⚔️</span>
       <span class="topbar-logo">FIGHT.IO</span>
       <span class="topbar-sep">|</span>
       <span class="topbar-sub">Admin</span>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
       <span id="top-stats" style="color:var(--text2);font-size:12px"></span>
-      <button class="btn btn-red" style="padding:6px 14px;font-size:12px" onclick="logout()">Logout</button>
+      <button class="btn btn-ghost" style="padding:6px 14px;font-size:12px" onclick="logout()">Logout</button>
     </div>
   </div>
 
   <div class="layout">
     <div class="sidebar">
-      <button class="nav-btn active" onclick="showTab('overview')" id="nav-overview">📊 Overview</button>
-      <button class="nav-btn" onclick="showTab('players')"  id="nav-players" >👥 Players</button>
-      <button class="nav-btn" onclick="showTab('economy')"  id="nav-economy" >💰 Economy</button>
-      <button class="nav-btn" onclick="showTab('cards')"    id="nav-cards"   >🃏 Cards</button>
-      <button class="nav-btn" onclick="showTab('events')"   id="nav-events"  >🐍 Events</button>
-      <button class="nav-btn" onclick="showTab('moves')"    id="nav-moves"   >💥 Moves</button>
+      <button class="nav-btn active" id="nav-overview" onclick="showTab('overview')">📊 Overview</button>
+      <button class="nav-btn" id="nav-players"  onclick="showTab('players')">👥 Players</button>
+      <button class="nav-btn" id="nav-economy"  onclick="showTab('economy')">💰 Economy</button>
+      <button class="nav-btn" id="nav-cards"    onclick="showTab('cards')">🃏 Cards</button>
+      <button class="nav-btn" id="nav-moves"    onclick="showTab('moves')">💥 Moves</button>
+      <button class="nav-btn" id="nav-events"   onclick="showTab('events')">🐍 Events</button>
     </div>
 
     <div class="main">
 
-      <!-- ── OVERVIEW ─────────────────────────────────── -->
+      <!-- OVERVIEW -->
       <div id="tab-overview">
         <div class="section-header"><h2>📊 Overview</h2><div class="line"></div></div>
-        <div class="stat-grid" id="stat-grid">
+        <div class="stat-grid">
           <div class="stat-card" style="border-top-color:var(--blue)"><div class="stat-label">Total Players</div><div class="stat-value" style="color:var(--blue)" id="s-players">—</div></div>
           <div class="stat-card" style="border-top-color:var(--green)"><div class="stat-label">Total Matches</div><div class="stat-value" style="color:var(--green)" id="s-matches">—</div></div>
           <div class="stat-card" style="border-top-color:var(--gold)"><div class="stat-label">Credits in Circulation</div><div class="stat-value" style="color:var(--gold)" id="s-credits">—</div></div>
@@ -361,18 +204,16 @@ async function endEvent(eventId) {
         </div>
       </div>
 
-      <!-- ── PLAYERS ──────────────────────────────────── -->
+      <!-- PLAYERS -->
       <div id="tab-players" style="display:none">
         <div class="section-header"><h2>👥 Players</h2><div class="line"></div></div>
         <div class="search-bar">
           <input type="text" id="player-search" placeholder="Search username or user ID..." oninput="searchPlayers()" />
-          <button class="btn btn-ghost" onclick="loadPlayers()">↺</button>
+          <button class="btn btn-ghost" onclick="loadPlayers()">↺ Refresh</button>
         </div>
         <div class="panel" style="padding:0;overflow:hidden">
           <table class="tbl">
-            <thead><tr>
-              <th>Username</th><th>Rank</th><th>W</th><th>L</th><th>Credits</th><th>Actions</th>
-            </tr></thead>
+            <thead><tr><th>Username</th><th>Rank</th><th>W</th><th>L</th><th>Credits</th><th>Actions</th></tr></thead>
             <tbody id="players-tbody"></tbody>
           </table>
         </div>
@@ -383,83 +224,43 @@ async function endEvent(eventId) {
         </div>
       </div>
 
-      <!-- ── ECONOMY ──────────────────────────────────── -->
+      <!-- ECONOMY -->
       <div id="tab-economy" style="display:none">
         <div class="section-header"><h2>💰 Economy</h2><div class="line"></div></div>
         <div class="eco-grid">
-          <div class="panel eco-section">
-            <h3>🏆 Ranked Rewards</h3>
-            <div class="eco-field"><label class="field-label">Win Credits</label><input type="number" id="eco-ranked-win" /></div>
-            <div class="eco-field"><label class="field-label">Loss Credits</label><input type="number" id="eco-ranked-loss" /></div>
+          <div class="panel">
+            <h3 style="font-size:15px;margin-bottom:16px">Battle Rewards</h3>
+            <div class="form-grid">
+              <div class="form-field"><label>Ranked Win</label><input type="number" id="eco-ranked-win" /></div>
+              <div class="form-field"><label>Ranked Loss</label><input type="number" id="eco-ranked-loss" /></div>
+              <div class="form-field"><label>Casual Win</label><input type="number" id="eco-casual-win" /></div>
+              <div class="form-field"><label>Casual Loss</label><input type="number" id="eco-casual-loss" /></div>
+            </div>
           </div>
-          <div class="panel eco-section">
-            <h3>🎮 Casual Rewards</h3>
-            <div class="eco-field"><label class="field-label">Win Credits</label><input type="number" id="eco-casual-win" /></div>
-            <div class="eco-field"><label class="field-label">Loss Credits</label><input type="number" id="eco-casual-loss" /></div>
-          </div>
-          <div class="panel eco-section">
-            <h3>📅 Daily & Progression</h3>
-            <div class="eco-field"><label class="field-label">Daily Base Credits</label><input type="number" id="eco-daily" /></div>
-            <div class="eco-field"><label class="field-label">Tokens to Rank Up</label><input type="number" id="eco-tokens" /></div>
-          </div>
-          <div class="panel" style="display:flex;flex-direction:column;justify-content:center;gap:12px">
-            <p style="color:var(--text2);font-size:13px;line-height:1.6">Changes apply to new matches after saving. Existing player data is unaffected.</p>
-            <button class="btn btn-gold btn-full" onclick="saveEconomy()">💾 Save All Changes</button>
+          <div class="panel">
+            <h3 style="font-size:15px;margin-bottom:16px">Daily Login Rewards</h3>
+            <div class="form-grid">
+              <div class="form-field"><label>Day 1</label><input type="number" id="eco-d1" /></div>
+              <div class="form-field"><label>Day 3</label><input type="number" id="eco-d3" /></div>
+              <div class="form-field"><label>Day 5</label><input type="number" id="eco-d5" /></div>
+              <div class="form-field"><label>Day 7</label><input type="number" id="eco-d7" /></div>
+            </div>
           </div>
         </div>
+        <button class="btn btn-gold" onclick="saveEconomy()">💾 Save Changes</button>
       </div>
 
-      <!-- ── CARDS ────────────────────────────────────── -->
-
-      <!-- ── EVENTS TAB ── -->
-      <div id="tab-events" style="display:none">
-        <div class="section-header"><h2>🐍 Events</h2><div class="line"></div></div>
-
-        <!-- Active Event Panel -->
-        <div class="panel" id="active-event-panel" style="margin-bottom:18px">
-          <h3 style="font-size:15px;color:var(--gold);margin-bottom:16px;letter-spacing:1px">⚡ Active Event</h3>
-          <div id="active-event-content" style="color:var(--text2)">Loading...</div>
-        </div>
-
-        <!-- Start Event -->
-        <div class="panel" style="margin-bottom:18px">
-          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🚀 Start an Event</h3>
-          <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:12px;align-items:end">
-            <div>
-              <label class="field-label">Event Config ID</label>
-              <input type="text" id="event-id-input" placeholder="e.g. venom_expansion" />
-            </div>
-            <div>
-              <label class="field-label">Duration (days)</label>
-              <input type="number" id="event-days-input" value="7" min="1" max="30" />
-            </div>
-            <button class="btn btn-gold" onclick="startEvent()">▶ Start</button>
-          </div>
-          <div id="event-start-msg" style="margin-top:10px;font-size:13px;color:var(--green);display:none"></div>
-        </div>
-
-        <!-- Event Store Viewer -->
-        <div class="panel" style="margin-bottom:18px">
-          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🛒 Event Store Preview</h3>
-          <div id="event-store-content" style="color:var(--text2)">No active event.</div>
-        </div>
-
-        <!-- Top EP Leaderboard -->
-        <div class="panel">
-          <h3 style="font-size:15px;color:var(--text);margin-bottom:16px;letter-spacing:1px">🏆 EP Leaderboard</h3>
-          <div id="event-leaderboard-content" style="color:var(--text2)">No active event.</div>
-        </div>
-      </div>
-
+      <!-- CARDS -->
       <div id="tab-cards" style="display:none">
-        <div class="section-header"><h2>🃏 Cards</h2><div class="line"></div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="card-search" placeholder="Search cards..." oninput="filterCards()" style="width:200px;padding:6px 10px;font-size:13px" />
-            <select id="card-tier-filter" onchange="filterCards()" style="padding:6px 10px;font-size:13px">
+        <div class="section-header">
+          <h2>🃏 Cards</h2><div class="line"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" id="card-search" placeholder="Search..." oninput="filterCards()" style="width:160px;padding:7px 10px;font-size:13px" />
+            <select id="card-tier-filter" onchange="filterCards()" style="padding:7px 10px;font-size:13px;width:110px">
               <option value="">All Tiers</option>
               <option>Basic</option><option>Elite</option><option>Ultra</option>
             </select>
-            <select id="card-type-filter" onchange="filterCards()" style="padding:6px 10px;font-size:13px">
+            <select id="card-type-filter" onchange="filterCards()" style="padding:7px 10px;font-size:13px;width:110px">
               <option value="">All Types</option>
               <option>Titan</option><option>Storm</option><option>Inferno</option><option>Shadow</option><option>Primal</option><option>Curse</option>
             </select>
@@ -468,28 +269,53 @@ async function endEvent(eventId) {
         <div id="cards-container"></div>
       </div>
 
-      <!-- ── MOVES TAB ── -->
+      <!-- MOVES -->
       <div id="tab-moves" style="display:none">
-        <div class="section-header"><h2>💥 Moves</h2><div class="line"></div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="move-search" placeholder="Search moves..." oninput="filterMoves()" style="width:200px;padding:6px 10px;font-size:13px" />
-            <select id="move-cat-filter" onchange="filterMoves()" style="padding:6px 10px;font-size:13px">
+        <div class="section-header">
+          <h2>💥 Moves</h2><div class="line"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input type="text" id="move-search" placeholder="Search moves..." oninput="filterMoves()" style="width:180px;padding:7px 10px;font-size:13px" />
+            <select id="move-cat-filter" onchange="filterMoves()" style="padding:7px 10px;font-size:13px;width:120px">
               <option value="">All Categories</option>
-              <option>Physical</option><option>Special</option><option>Status</option>
+              <option>Physical</option><option>Special</option><option>Support</option>
             </select>
-            <select id="move-type-filter" onchange="filterMoves()" style="padding:6px 10px;font-size:13px">
-              <option value="">All</option>
-              <option value="normal">Normal</option><option value="signature">Signature</option>
+            <select id="move-sig-filter" onchange="filterMoves()" style="padding:7px 10px;font-size:13px;width:130px">
+              <option value="">All Moves</option>
+              <option value="normal">Normal Only</option>
+              <option value="signature">Signatures Only</option>
             </select>
           </div>
+          <span id="move-count" style="color:var(--text2);font-size:12px"></span>
         </div>
-        <div class="panel" style="padding:0;overflow:hidden">
+        <div class="panel" style="padding:0;overflow:hidden;overflow-x:auto">
           <table class="tbl" id="moves-table">
             <thead><tr>
-              <th>ID</th><th>Name</th><th>Cat</th><th>Power</th><th>Acc%</th><th>Cost⚡</th><th>Effect</th><th>Type</th>
+              <th>ID</th><th>Name</th><th>Category</th><th>Power</th><th>Acc%</th><th>Cost ⚡</th><th>Effect</th><th>Type</th>
             </tr></thead>
             <tbody id="moves-tbody"></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- EVENTS -->
+      <div id="tab-events" style="display:none">
+        <div class="section-header"><h2>🐍 Events</h2><div class="line"></div></div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3 style="font-size:15px;color:var(--gold);margin-bottom:16px">⚡ Active Event</h3>
+          <div id="active-event-content" style="color:var(--text2)">Loading...</div>
+        </div>
+        <div class="panel" style="margin-bottom:18px">
+          <h3 style="font-size:15px;margin-bottom:16px">🚀 Start an Event</h3>
+          <div style="display:grid;grid-template-columns:1fr 140px 120px;gap:12px;align-items:end">
+            <div class="form-field"><label>Event Config ID</label><input type="text" id="event-id-input" placeholder="e.g. venom_expansion" /></div>
+            <div class="form-field"><label>Duration (days)</label><input type="number" id="event-days-input" value="7" min="1" max="30" /></div>
+            <button class="btn btn-gold" onclick="startEvent()" style="margin-bottom:0">▶ Start</button>
+          </div>
+          <div id="event-start-msg" style="margin-top:10px;font-size:13px;color:var(--green);display:none"></div>
+        </div>
+        <div class="panel">
+          <h3 style="font-size:15px;margin-bottom:16px">🏆 EP Leaderboard</h3>
+          <div id="event-leaderboard-content" style="color:var(--text2)">No active event.</div>
         </div>
       </div>
 
@@ -497,7 +323,7 @@ async function endEvent(eventId) {
   </div><!-- /layout -->
 </div><!-- /app -->
 
-<!-- ── PLAYER EDIT MODAL ──────────────────────────────── -->
+<!-- PLAYER MODAL -->
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
     <h3 id="player-modal-title">Edit Player</h3>
@@ -524,89 +350,56 @@ async function endEvent(eventId) {
   </div>
 </div>
 
-<!-- ── CARD EDIT MODAL ────────────────────────────────── -->
-<div class="modal-overlay" id="card-modal">
-  <div class="modal">
-    <h3 id="card-modal-title">New Card</h3>
-    <input type="hidden" id="card-edit-id-orig" />
-    <div class="form-grid">
-      <div class="form-field"><label>Card ID</label><input type="text" id="card-id" placeholder="e.g. lion" /></div>
-      <div class="form-field"><label>Name</label><input type="text" id="card-name" /></div>
-      <div class="form-field"><label>Tier</label>
-        <select id="card-tier"><option>Basic</option><option>Elite</option><option>Ultra</option></select>
-      </div>
-      <div class="form-field"><label>Type</label>
-        <select id="card-type"><option>Titan</option><option>Storm</option><option>Inferno</option><option>Shadow</option><option>Primal</option><option>Curse</option></select>
-      </div>
-      <div class="form-field"><label>Price (cr)</label><input type="number" id="card-price" /></div>
-      <div class="form-field"><label>Emoji</label><input type="text" id="card-emoji" placeholder="<:wolf:123>" /></div>
-      <div class="form-field form-full"><label>Description</label><textarea id="card-desc" rows="2"></textarea></div>
-    </div>
-    <p style="font-size:11px;color:var(--text2);margin:14px 0 10px;letter-spacing:1px;text-transform:uppercase;font-family:Rajdhani;font-weight:700">Stats</p>
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:4px">
-      <div class="form-field"><label>HP</label><input type="number" id="cs-hp" /></div>
-      <div class="form-field"><label>ATK</label><input type="number" id="cs-attack" /></div>
-      <div class="form-field"><label>DEF</label><input type="number" id="cs-defence" /></div>
-      <div class="form-field"><label>SPD</label><input type="number" id="cs-speed" /></div>
-      <div class="form-field"><label>AGI</label><input type="number" id="cs-agility" /></div>
-    </div>
-    <div class="modal-btns">
-      <button class="btn btn-gold" style="flex:1" onclick="saveCard()">Save Card</button>
-      <button class="btn btn-ghost" style="flex:1" onclick="closeModal('card-modal')">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── TOAST ──────────────────────────────────────────── -->
 <div id="toast"></div>
 
 <script>
-// ══════════════════════════════════════════════════════════
-// CONFIG — set your password here
-// ══════════════════════════════════════════════════════════
-const ADMIN_PASSWORD = 'CHANGE_ME'; // <-- set your password
+// ════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════
+const ADMIN_PASSWORD = 'CHANGE_ME';
 const RANKS = ['Bronze','Silver','Gold','Platinum','Diamond','Apex','Legend'];
-const RANK_COLORS = { Bronze:'#cd7f32', Silver:'#c0c0c0', Gold:'#ffd700', Platinum:'#e5e4e2', Diamond:'#b9f2ff', Apex:'#ff6b6b', Legend:'#ffd700' };
+const RANK_COLORS = {Bronze:'#cd7f32',Silver:'#c0c0c0',Gold:'#ffd700',Platinum:'#e5e4e2',Diamond:'#b9f2ff',Apex:'#ff6b6b',Legend:'#ffd700'};
 
-let sb = null;
-let allPlayers = [];
-let filteredPlayers = [];
+// ════════════════════════════════════════════
+// BOT DATA — embedded from data.js
+// ════════════════════════════════════════════
+const BOT_DATA = {"cards":[{"id":"wolf","name":"Wolf","tier":"Basic","price":10000,"type":"Storm","stats":{"hp":29,"attack":68,"defence":42,"speed":72,"agility":66},"passive":{"name":"Pack Instinct","description":"ATK and SPD +10% when HP below 40%."},"signature":"alpha_strike","description":"A fierce pack hunter.","emoji":"<:wolf:1479741864927297558>"},{"id":"bull","name":"Bull","tier":"Basic","price":12000,"type":"Titan","stats":{"hp":32,"attack":75,"defence":50,"speed":52,"agility":65},"passive":{"name":"Raging Bull","description":"Each consecutive attack +5% damage (max 3x)."},"signature":"bull_rush","description":"Pure aggression.","emoji":"<:bull:1479750058017689723>"},{"id":"crocodile","name":"Crocodile","tier":"Basic","price":15000,"type":"Primal","stats":{"hp":40,"attack":65,"defence":75,"speed":38,"agility":50},"passive":{"name":"Thick Hide","description":"First hit each turn reduced by 20%."},"signature":"death_spin","description":"Ancient and armoured.","emoji":"<:crocodile:1479750067937214475>"},{"id":"gorilla","name":"Gorilla","tier":"Basic","price":18000,"type":"Titan","stats":{"hp":45,"attack":62,"defence":70,"speed":42,"agility":44},"passive":{"name":"Ironclad","description":"DEF counts as 10% higher vs physical hits."},"signature":"silverback_rage","description":"Unmovable wall of muscle.","emoji":"<:gorilla:1479750003382816949>"},{"id":"hyena","name":"Hyena","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":28,"attack":70,"defence":42,"speed":70,"agility":68},"passive":{"name":"Frenzied","description":"Crits restore 8% max HP."},"signature":"cackle_frenzy","description":"Chaotic and relentless.","emoji":"<:hyena:1479749999720923196>"},{"id":"shark","name":"Shark","tier":"Basic","price":20000,"type":"Storm","stats":{"hp":30,"attack":74,"defence":45,"speed":68,"agility":58},"passive":{"name":"Blood Frenzy","description":"+15% damage vs opponents below 50% HP."},"signature":"feeding_frenzy","description":"Cold-blooded finisher.","emoji":"<:shark:1479751066290487357>"},{"id":"falcon","name":"Falcon","tier":"Basic","price":14000,"type":"Storm","stats":{"hp":24,"attack":52,"defence":36,"speed":88,"agility":80},"passive":{"name":"Aerial Mastery","description":"+15% base dodge chance."},"signature":"diving_strike","description":"Near untouchable.","emoji":"<:falcon:1479742843839975464>"},{"id":"komodo_dragon","name":"Komodo Dragon","tier":"Basic","price":16000,"type":"Curse","stats":{"hp":37,"attack":60,"defence":65,"speed":44,"agility":63},"passive":{"name":"Toxic Blood","description":"Physical attackers have 20% chance to be poisoned."},"signature":"komodo_venom","description":"Patient and toxic.","emoji":"<:komodo_dragon:1479750065202532352>"},{"id":"wolverine","name":"Wolverine","tier":"Basic","price":22000,"type":"Storm","stats":{"hp":33,"attack":72,"defence":55,"speed":58,"agility":55},"passive":{"name":"Undying Fury","description":"ATK +25% when HP below 20%."},"signature":"berserker","description":"Does not know how to quit.","emoji":"<:wolverine:1479751069369106562>"},{"id":"wild_boar","name":"Wild Boar","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":43,"attack":58,"defence":66,"speed":50,"agility":48},"passive":{"name":"Tusk Guard","description":"Takes 10% reduced damage from all sources."},"signature":"wild_frenzy","description":"Built like a battering ram.","emoji":"<:wild_boar:1479750061964656741>"},{"id":"lion","name":"Lion","tier":"Elite","price":50000,"type":"Inferno","stats":{"hp":41,"attack":100,"defence":68,"speed":88,"agility":89},"passive":{"name":"King's Presence","description":"At battle start, opponent ATK lowered 1 stage."},"signature":"kings_roar","description":"Commands respect before the first blow.","emoji":"<:lion:1479741856211406951>"},{"id":"leopard","name":"Leopard","tier":"Elite","price":75000,"type":"Shadow","stats":{"hp":36,"attack":88,"defence":58,"speed":105,"agility":104},"passive":{"name":"Shadow Stalk","description":"First move each battle always crits."},"signature":"shadow_claw","description":"Strikes before you know it is there.","emoji":"<:leopard:1479741850729582644>"},{"id":"jaguar","name":"Jaguar","tier":"Elite","price":100000,"type":"Storm","stats":{"hp":40,"attack":108,"defence":62,"speed":90,"agility":88},"passive":{"name":"Jaw Lock","description":"Crushing Bite and Death Roll deal +15% damage."},"signature":"jaw_of_death","description":"Once it locks on its over.","emoji":"<:jaguar:1479741841917218960>"},{"id":"grizzly_bear","name":"Grizzly Bear","tier":"Elite","price":200000,"type":"Titan","stats":{"hp":61,"attack":95,"defence":88,"speed":60,"agility":67},"passive":{"name":"Bear Endurance","description":"Recovers 5% max HP at end of each turn."},"signature":"grizzly_rage","description":"Outlasts everything.","emoji":"<:grizzly_bear:1479741835839803392>"},{"id":"king_cobra","name":"King Cobra","tier":"Ultra","price":500000,"type":"Curse","stats":{"hp":48,"attack":125,"defence":85,"speed":132,"agility":130},"passive":{"name":"Neurotoxin","description":"Poison from this card deals double damage."},"signature":"neurotoxin_blast","description":"Fast, lethal, paralyzing.","emoji":"<:king_cobra:1479741822346596516>"},{"id":"tiger","name":"Tiger","tier":"Ultra","price":1000000,"type":"Inferno","stats":{"hp":55,"attack":148,"defence":90,"speed":115,"agility":107},"passive":{"name":"Bengal Fury","description":"Every 3rd attack: guaranteed crit +20% damage."},"signature":"bengal_fury","description":"Raw power wrapped in speed and fury.","emoji":"<:tiger:1479741828193456201>"},{"id":"polar_bear","name":"Polar Bear","tier":"Ultra","price":2000000,"type":"Titan","stats":{"hp":85,"attack":128,"defence":130,"speed":72,"agility":75},"passive":{"name":"Arctic Resilience","description":"All damage reduced 12%. Cannot be poisoned."},"signature":"blizzard_slam","description":"An unstoppable glacier of force.","emoji":"<:polar_bear:1479741818009813075>"}],"moves":[{"id":"basic_attack","name":"Basic Attack","category":"Physical","power":20,"accuracy":100,"cost":0,"description":"A weak strike. Always available."},{"id":"quick_jab","name":"Quick Jab","category":"Physical","power":28,"accuracy":100,"cost":2,"priority":true,"description":"Lightning-fast. Always moves first."},{"id":"scratch","name":"Scratch","category":"Physical","power":32,"accuracy":100,"cost":2,"description":"Basic claw scratch. Cheap and reliable."},{"id":"slash","name":"Slash","category":"Physical","power":42,"accuracy":95,"cost":3,"description":"A clean swift slash."},{"id":"rake","name":"Rake","category":"Physical","power":35,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":40,"description":"Rakes claws. 40% chance to lower defence."},{"id":"lunge","name":"Lunge","category":"Physical","power":45,"accuracy":90,"cost":3,"bonusIfFirst":15,"description":"Lunges forward. +15 damage if moving first."},{"id":"pounce","name":"Pounce","category":"Physical","power":48,"accuracy":92,"cost":3,"bonusIfFirst":20,"description":"Leaps at opponent. +20 damage if moving first."},{"id":"snap","name":"Snap","category":"Physical","power":22,"accuracy":95,"cost":2,"hits":2,"description":"Two quick bites."},{"id":"claw_swipe","name":"Claw Swipe","category":"Physical","power":26,"accuracy":90,"cost":3,"hits":2,"description":"Dual claw swipes. Hits twice."},{"id":"tail_strike","name":"Tail Strike","category":"Physical","power":32,"accuracy":95,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Sweeping tail. Always lowers opponent defence."},{"id":"skewer","name":"Skewer","category":"Physical","power":38,"accuracy":88,"cost":3,"effect":"bleed","effectChance":60,"description":"60% chance to cause bleed."},{"id":"body_slam","name":"Body Slam","category":"Physical","power":62,"accuracy":90,"cost":3,"effect":"stun","effectChance":15,"description":"15% chance to stun."},{"id":"headbutt","name":"Headbutt","category":"Physical","power":55,"accuracy":88,"cost":3,"effect":"stun","effectChance":20,"description":"20% chance to stun."},{"id":"crushing_bite","name":"Crushing Bite","category":"Physical","power":65,"accuracy":85,"cost":4,"defPierce":0.2,"description":"Ignores 20% of opponent defence."},{"id":"gore","name":"Gore","category":"Physical","power":45,"accuracy":85,"cost":3,"effect":"bleed","effectChance":100,"description":"Always causes bleed for 3 turns."},{"id":"wild_thrash","name":"Wild Thrash","category":"Physical","power":22,"accuracy":85,"cost":3,"hits":"2-3","description":"Hits 2-3 times randomly."},{"id":"ground_stomp","name":"Ground Stomp","category":"Physical","power":48,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"body_press","name":"Body Press","category":"Physical","power":58,"accuracy":90,"cost":3,"useDefence":true,"description":"Uses own defence stat as attack."},{"id":"double_hit","name":"Double Hit","category":"Physical","power":38,"accuracy":88,"cost":3,"hits":2,"description":"Strikes precisely twice."},{"id":"horn_drive","name":"Horn Drive","category":"Physical","power":68,"accuracy":82,"cost":4,"description":"High power, lower accuracy."},{"id":"crunch","name":"Crunch","category":"Physical","power":70,"accuracy":88,"cost":4,"effect":"lower_defence","effectChance":40,"description":"40% chance to lower defence."},{"id":"tackle","name":"Tackle","category":"Physical","power":55,"accuracy":92,"cost":3,"description":"Reliable full-body tackle."},{"id":"ambush","name":"Ambush","category":"Physical","power":58,"accuracy":90,"cost":3,"critIfSecond":true,"description":"Guaranteed crit if opponent moved first."},{"id":"chip_away","name":"Chip Away","category":"Physical","power":52,"accuracy":100,"cost":3,"ignoreStages":true,"description":"Ignores all opponent stat stage changes."},{"id":"snap_bite","name":"Snap Bite","category":"Physical","power":55,"accuracy":90,"cost":3,"defPierce":0.1,"description":"Fast bite. Pierces 10% defence."},{"id":"stomp","name":"Stomp","category":"Physical","power":58,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"heavy_slam","name":"Heavy Slam","category":"Physical","power":82,"accuracy":80,"cost":4,"description":"Crushing full-body slam."},{"id":"reckless_charge","name":"Reckless Charge","category":"Physical","power":92,"accuracy":85,"cost":5,"recoil":0.15,"description":"15% recoil damage."},{"id":"skull_bash","name":"Skull Bash","category":"Physical","power":88,"accuracy":80,"cost":5,"effect":"stun","effectChance":25,"description":"25% stun chance."},{"id":"iron_tail","name":"Iron Tail","category":"Physical","power":78,"accuracy":82,"cost":4,"effect":"lower_defence","effectChance":35,"description":"35% chance to drop defence."},{"id":"avalanche","name":"Avalanche","category":"Physical","power":72,"accuracy":88,"cost":4,"bonusIfSecond":50,"description":"+50% power if hit first this turn."},{"id":"retaliate","name":"Retaliate","category":"Physical","power":78,"accuracy":90,"cost":4,"bonusIfDamaged":30,"description":"+30% damage if took damage last turn."},{"id":"earthquake","name":"Earthquake","category":"Physical","power":82,"accuracy":90,"cost":5,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"megaton_slam","name":"Megaton Slam","category":"Physical","power":98,"accuracy":75,"cost":5,"description":"Maximum power. High risk."},{"id":"maul","name":"Maul","category":"Physical","power":75,"accuracy":82,"cost":4,"effect":"bleed","effectChance":80,"description":"80% chance to cause bleed."},{"id":"tusk_ram","name":"Tusk Ram","category":"Physical","power":72,"accuracy":85,"cost":4,"effect":"bleed","effectChance":50,"description":"50% chance to cause bleed."},{"id":"trample","name":"Trample","category":"Physical","power":65,"accuracy":88,"cost":4,"effect":"lower_agility","effectChance":60,"description":"60% chance to lower agility."},{"id":"death_roll","name":"Death Roll","category":"Physical","power":122,"accuracy":75,"cost":6,"description":"Grab and roll violently. Save up for this."},{"id":"giga_impact","name":"Giga Impact","category":"Physical","power":132,"accuracy":70,"cost":6,"skipNextTurn":true,"description":"Devastating impact. Must rest next turn."},{"id":"final_strike","name":"Final Strike","category":"Physical","power":112,"accuracy":80,"cost":6,"bonusIfLowHp":true,"description":"+50% power if user below 30% HP."},{"id":"obliterate","name":"Obliterate","category":"Physical","power":128,"accuracy":72,"cost":6,"defPierce":0.3,"description":"Pierces 30% of all defence."},{"id":"flail","name":"Flail","category":"Physical","power":20,"accuracy":100,"cost":2,"scalesMissingHp":true,"description":"Power scales with missing HP. Max 150."},{"id":"sucker_punch","name":"Sucker Punch","category":"Physical","power":68,"accuracy":90,"cost":3,"priority":true,"failsVsSupport":true,"description":"Priority but fails vs support moves."},{"id":"last_resort","name":"Last Resort","category":"Physical","power":82,"accuracy":85,"cost":4,"bonusPerTurn":8,"description":"+8 power each turn survived."},{"id":"fang_strike","name":"Fang Strike","category":"Physical","power":50,"accuracy":88,"cost":3,"effect":"poison","effectChance":30,"description":"30% chance to poison."},{"id":"poison_fang","name":"Poison Fang","category":"Physical","power":48,"accuracy":88,"cost":3,"effect":"poison","effectChance":50,"description":"50% chance to poison."},{"id":"constrict","name":"Constrict","category":"Physical","power":40,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"roar","name":"Roar","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_atk_def","effectChance":100,"description":"Lowers opponent ATK and DEF by 1 stage."},{"id":"intimidate","name":"Intimidate","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"lower_atk_2","effectChance":100,"description":"Sharply lowers opponent ATK by 2 stages."},{"id":"taunt","name":"Taunt","category":"Special","power":0,"accuracy":90,"cost":2,"effect":"taunt","effectChance":100,"description":"Forces opponent to use only Physical moves for 2 turns."},{"id":"polar_howl","name":"Polar Howl","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_spd_2","effectChance":100,"description":"Sharply lowers opponent speed."},{"id":"snarl","name":"Snarl","category":"Special","power":0,"accuracy":95,"cost":2,"effect":"lower_atk","effectChance":100,"description":"Lowers opponent attack by 1 stage."},{"id":"terrify","name":"Terrify","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"lower_all","effectChance":100,"description":"Lowers ALL opponent stats by 1 stage."},{"id":"screech","name":"Screech","category":"Special","power":0,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Lowers opponent defence by 1 stage."},{"id":"leer","name":"Leer","category":"Special","power":0,"accuracy":100,"cost":1,"effect":"lower_defence","effectChance":100,"description":"Menacing glare. Lowers defence. Very cheap."},{"id":"war_cry","name":"War Cry","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises own attack by 1 stage."},{"id":"feral_rage","name":"Feral Rage","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"feral_rage_buff","effectChance":100,"description":"ATK +2 stages, DEF -1 stage."},{"id":"pack_howl","name":"Pack Howl","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_agi","effectChance":100,"maxStacks":2,"description":"Raises SPD and AGI. Max 2 uses per battle."},{"id":"predator_instinct","name":"Predator Instinct","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit","effectChance":100,"description":"Raises crit chance for 3 turns."},{"id":"blood_scent","name":"Blood Scent","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"next_hit_bonus","effectChance":100,"description":"Next attack deals +40% damage."},{"id":"apex_presence","name":"Apex Presence","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"raise_all_stats","effectChance":100,"description":"Raises all own stats by 1 stage."},{"id":"sharpen","name":"Sharpen","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises attack by 1 stage."},{"id":"focus_energy","name":"Focus Energy","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit_2","effectChance":100,"description":"Greatly raises crit chance for 2 turns."},{"id":"hone_instincts","name":"Hone Instincts","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_spd","effectChance":100,"description":"Raises ATK and SPD by 1 stage each."},{"id":"coil","name":"Coil","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def_acc","effectChance":100,"description":"Raises ATK, DEF, and accuracy by 1 each."},{"id":"bulk_up","name":"Bulk Up","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def","effectChance":100,"description":"Raises ATK and DEF by 1 stage each."},{"id":"agility","name":"Agility","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"toxic_spit","name":"Toxic Spit","category":"Special","power":22,"accuracy":85,"cost":2,"effect":"poison","effectChance":100,"description":"Poisons opponent for 4 turns."},{"id":"venom_fangs","name":"Venom Fangs","category":"Special","power":48,"accuracy":85,"cost":4,"effect":"poison","effectChance":100,"description":"Damage and guaranteed poison."},{"id":"serpent_gaze","name":"Serpent Gaze","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"death_stare","name":"Death Stare","category":"Special","power":0,"accuracy":90,"cost":4,"effect":"hp_drain_dot","effectChance":100,"description":"Opponent loses 10% max HP/turn for 3 turns."},{"id":"primal_surge","name":"Primal Surge","category":"Special","power":30,"accuracy":90,"cost":4,"scaleMissingHp":true,"description":"Power scales with missing HP."},{"id":"acid_spray","name":"Acid Spray","category":"Special","power":30,"accuracy":88,"cost":3,"effect":"lower_defence","effectChance":100,"description":"Damage + always lowers opponent DEF."},{"id":"venom_drip","name":"Venom Drip","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"toxic","effectChance":100,"description":"Applies toxic — damage increases each turn."},{"id":"hex","name":"Hex","category":"Special","power":38,"accuracy":92,"cost":3,"doubleVsStatus":true,"description":"Double power vs opponents with status conditions."},{"id":"lash_out","name":"Lash Out","category":"Special","power":40,"accuracy":90,"cost":3,"doubleIfStatDropped":true,"description":"Double power if your stats were lowered this turn."},{"id":"venoshock","name":"Venoshock","category":"Special","power":35,"accuracy":90,"cost":3,"doubleVsPoison":true,"description":"Double damage against poisoned opponents."},{"id":"brace","name":"Brace","category":"Support","power":0,"accuracy":100,"cost":1,"effect":"brace","effectChance":100,"description":"Reduces incoming damage by 50% this turn."},{"id":"recover","name":"Recover","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"heal_20","effectChance":100,"description":"Restores 20% of max HP."},{"id":"second_wind","name":"Second Wind","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"second_wind","effectChance":100,"description":"Restores 15% HP + clears one status."},{"id":"fortify","name":"Fortify","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Raises defence by 2 stages."},{"id":"counter_stance","name":"Counter Stance","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"counter","effectChance":100,"description":"Reflects 30% of next hit back."},{"id":"endure","name":"Endure","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"endure","effectChance":100,"description":"Cannot be reduced below 1 HP this turn."},{"id":"camouflage","name":"Camouflage","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"evasion_boost","effectChance":100,"description":"Next attack against you has 50% reduced accuracy."},{"id":"adrenaline","name":"Adrenaline","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"last_stand","name":"Last Stand","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"last_stand","effectChance":100,"requiresLowHp":true,"description":"Only below 25% HP. Raises all stats by 2 stages."},{"id":"shed_skin","name":"Shed Skin","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"cleanse_status","effectChance":100,"description":"Cleanses all status conditions."},{"id":"dig_in","name":"Dig In","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_def","effectChance":100,"description":"Raises defence by 1 stage."},{"id":"regenerate","name":"Regenerate","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_regen","effectChance":100,"description":"Restore 10% HP for the next 3 turns."},{"id":"mirror_coat","name":"Mirror Coat","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"mirror_coat","effectChance":100,"description":"Reflects 50% of special move damage back."},{"id":"iron_defense","name":"Iron Defense","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Sharply raises defence by 2 stages."},{"id":"focus","name":"Focus","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_acc","effectChance":100,"description":"Raises accuracy by 1 stage."},{"id":"stealth","name":"Stealth","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"stealth","effectChance":100,"description":"Next move this battle is guaranteed to crit."},{"id":"blood_rage","name":"Blood Rage","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"blood_rage","effectChance":100,"description":"ATK +3 stages, lose 5% HP/turn for 3 turns."},{"id":"hibernation","name":"Hibernation","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_35","effectChance":100,"description":"Restores 35% HP but skips next turn."}],"signatures":[{"id":"alpha_strike","name":"Alpha Strike","category":"Physical","power":85,"accuracy":92,"cost":4,"effect":"raise_atk_spd","effectChance":100,"description":"[WOLF] Raises own ATK and SPD after hitting."},{"id":"bull_rush","name":"Bull Rush","category":"Physical","power":110,"accuracy":85,"cost":5,"recoil":0.1,"effect":"stun","effectChance":35,"description":"[BULL] 35% stun chance. 10% recoil."},{"id":"death_spin","name":"Death Spin","category":"Physical","power":100,"accuracy":80,"cost":5,"hits":2,"defPierce":0.25,"description":"[CROC] Hits twice. Pierces 25% DEF each hit."},{"id":"silverback_rage","name":"Silverback Rage","category":"Physical","power":105,"accuracy":85,"cost":5,"effect":"raise_atk_def","effectChance":100,"description":"[GORILLA] Raises ATK and DEF after hitting."},{"id":"cackle_frenzy","name":"Cackle Frenzy","category":"Physical","power":25,"accuracy":90,"cost":4,"hits":"3-5","description":"[HYENA] Hits 3-5 times unpredictably."},{"id":"feeding_frenzy","name":"Feeding Frenzy","category":"Physical","power":90,"accuracy":88,"cost":5,"bonusIfBleeding":40,"description":"[SHARK] +40 damage if opponent is bleeding."},{"id":"diving_strike","name":"Diving Strike","category":"Physical","power":95,"accuracy":90,"cost":4,"priority":true,"critIfFirst":true,"description":"[FALCON] Priority. Crits if you move first."},{"id":"komodo_venom","name":"Komodo Venom","category":"Special","power":55,"accuracy":88,"cost":4,"effect":"toxic","effectChance":100,"description":"[KOMODO] Applies toxic status."},{"id":"berserker","name":"Berserker","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"berserker_stance","effectChance":100,"description":"[WOLVERINE] ATK x2, take 20% more damage for 2 turns."},{"id":"wild_frenzy","name":"Wild Frenzy","category":"Physical","power":115,"accuracy":82,"cost":5,"effect":"lower_atk_def","effectChance":100,"description":"[WILD BOAR] Lowers own ATK and DEF after use."},{"id":"kings_roar","name":"King's Roar","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"kings_roar_effect","effectChance":100,"description":"[LION] Lowers ALL opponent stats by 1 stage."},{"id":"shadow_claw","name":"Shadow Claw","category":"Physical","power":78,"accuracy":95,"cost":4,"highCritRatio":true,"description":"[LEOPARD] High crit ratio. Strikes from darkness."},{"id":"jaw_of_death","name":"Jaw of Death","category":"Physical","power":140,"accuracy":78,"cost":6,"defPierce":0.4,"description":"[JAGUAR] Pierces 40% of all defence."},{"id":"grizzly_rage","name":"Grizzly Rage","category":"Physical","power":100,"accuracy":85,"cost":5,"effect":"raise_all_stats","effectChance":100,"description":"[GRIZZLY] Raises all stats after landing."},{"id":"neurotoxin_blast","name":"Neurotoxin Blast","category":"Special","power":70,"accuracy":85,"cost":5,"effect":"toxic","effectChance":100,"description":"[KING COBRA] Applies toxic + poisons for 4 turns."},{"id":"bengal_fury","name":"Bengal Fury","category":"Physical","power":110,"accuracy":88,"cost":5,"hits":2,"description":"[TIGER] Hits twice. Both have raised crit chance."},{"id":"blizzard_slam","name":"Blizzard Slam","category":"Physical","power":120,"accuracy":82,"cost":6,"effect":"lower_spd_2","effectChance":100,"description":"[POLAR BEAR] Sharply drops opponent speed."}],"levelUpMoves":{"wolf":{"startingMoves":["scratch","quick_jab","lunge","snarl"],"tree":{"5":"slash","8":"pack_howl","12":"predator_instinct","16":"pounce","20":"feral_rage","25":"blood_scent","30":"hone_instincts","35":"wild_thrash","40":"reckless_charge","45":"roar","50":"alpha_strike"}},"bull":{"startingMoves":["tackle","headbutt","lunge","leer"],"tree":{"5":"ground_stomp","8":"horn_drive","12":"wild_thrash","16":"heavy_slam","20":"bulk_up","25":"tusk_ram","30":"trample","35":"reckless_charge","40":"earthquake","45":"skull_bash","50":"bull_rush"}},"crocodile":{"startingMoves":["snap","tail_strike","brace","dig_in"],"tree":{"5":"crushing_bite","8":"gore","12":"body_press","16":"death_roll","20":"fortify","25":"snap_bite","30":"endure","35":"maul","40":"avalanche","45":"iron_defense","50":"death_spin"}},"gorilla":{"startingMoves":["scratch","body_slam","dig_in","roar"],"tree":{"5":"headbutt","8":"body_press","12":"fortify","16":"heavy_slam","20":"bulk_up","25":"ground_stomp","30":"iron_defense","35":"earthquake","40":"endure","45":"megaton_slam","50":"silverback_rage"}},"hyena":{"startingMoves":["scratch","quick_jab","snarl","taunt"],"tree":{"5":"slash","8":"feral_rage","12":"wild_thrash","16":"adrenaline","20":"blood_scent","25":"crushing_bite","30":"lash_out","35":"reckless_charge","40":"focus_energy","45":"blood_rage","50":"cackle_frenzy"}},"shark":{"startingMoves":["snap","lunge","leer","scratch"],"tree":{"5":"gore","8":"blood_scent","12":"crushing_bite","16":"predator_instinct","20":"fang_strike","25":"reckless_charge","30":"hex","35":"maul","40":"death_roll","45":"obliterate","50":"feeding_frenzy"}},"falcon":{"startingMoves":["quick_jab","scratch","camouflage","adrenaline"],"tree":{"5":"pounce","8":"ambush","12":"predator_instinct","16":"hone_instincts","20":"counter_stance","25":"focus_energy","30":"sucker_punch","35":"stealth","40":"slash","45":"final_strike","50":"diving_strike"}},"komodo_dragon":{"startingMoves":["scratch","tail_strike","toxic_spit","leer"],"tree":{"5":"poison_fang","8":"fang_strike","12":"acid_spray","16":"venom_drip","20":"shed_skin","25":"hex","30":"venoshock","35":"venom_fangs","40":"death_stare","45":"crushing_bite","50":"komodo_venom"}},"wolverine":{"startingMoves":["scratch","claw_swipe","second_wind","snarl"],"tree":{"5":"slash","8":"feral_rage","12":"endure","16":"retaliate","20":"blood_rage","25":"maul","30":"lash_out","35":"reckless_charge","40":"chip_away","45":"last_stand","50":"berserker"}},"wild_boar":{"startingMoves":["tackle","headbutt","brace","leer"],"tree":{"5":"gore","8":"tusk_ram","12":"body_slam","16":"fortify","20":"trample","25":"horn_drive","30":"reckless_charge","35":"endure","40":"iron_defense","45":"skull_bash","50":"wild_frenzy"}},"lion":{"startingMoves":["slash","pounce","war_cry","snarl"],"tree":{"5":"claw_swipe","8":"roar","12":"predator_instinct","16":"feral_rage","20":"blood_scent","25":"ambush","30":"hone_instincts","35":"intimidate","40":"focus_energy","45":"giga_impact","50":"kings_roar"}},"leopard":{"startingMoves":["quick_jab","ambush","camouflage","scratch"],"tree":{"5":"pounce","8":"stealth","12":"predator_instinct","16":"blood_scent","20":"sucker_punch","25":"counter_stance","30":"focus_energy","35":"claw_swipe","40":"lash_out","45":"final_strike","50":"shadow_claw"}},"jaguar":{"startingMoves":["slash","crushing_bite","pounce","blood_scent"],"tree":{"5":"crunch","8":"feral_rage","12":"predator_instinct","16":"death_roll","20":"hone_instincts","25":"snap_bite","30":"maul","35":"war_cry","40":"obliterate","45":"giga_impact","50":"jaw_of_death"}},"grizzly_bear":{"startingMoves":["body_slam","claw_swipe","dig_in","roar"],"tree":{"5":"maul","8":"body_press","12":"fortify","16":"recover","20":"bulk_up","25":"heavy_slam","30":"iron_defense","35":"earthquake","40":"regenerate","45":"endure","50":"grizzly_rage"}},"king_cobra":{"startingMoves":["quick_jab","toxic_spit","serpent_gaze","leer"],"tree":{"5":"poison_fang","8":"venom_fangs","12":"coil","16":"venom_drip","20":"acid_spray","25":"hex","30":"venoshock","35":"death_stare","40":"shed_skin","45":"terrify","50":"neurotoxin_blast"}},"tiger":{"startingMoves":["slash","pounce","claw_swipe","feral_rage"],"tree":{"5":"blood_scent","8":"predator_instinct","12":"crushing_bite","16":"hone_instincts","20":"war_cry","25":"focus_energy","30":"maul","35":"reckless_charge","40":"primal_surge","45":"obliterate","50":"bengal_fury"}},"polar_bear":{"startingMoves":["body_slam","heavy_slam","fortify","roar"],"tree":{"5":"body_press","8":"polar_howl","12":"iron_defense","16":"recover","20":"bulk_up","25":"earthquake","30":"avalanche","35":"regenerate","40":"endure","45":"apex_presence","50":"blizzard_slam"}}}};
+
+// ════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════
+let db = null;
+let allPlayers = [], filteredPlayers = [];
 let currentPage = 1;
 const PAGE_SIZE = 20;
 let rankChart = null;
-let cardIsNew = false;
 
-// ── Login ──────────────────────────────────────────────
+// ════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════
 function login() {
   const url = document.getElementById('sb-url').value.trim();
   const key = document.getElementById('sb-key').value.trim();
   const pw  = document.getElementById('admin-pw').value;
   const err = document.getElementById('login-err');
 
-  if (pw !== ADMIN_PASSWORD) {
-    err.textContent = '⚠ Invalid password'; err.style.display = 'block'; return;
-  }
-  if (!url || !key) {
-    err.textContent = '⚠ Enter Supabase URL and key'; err.style.display = 'block'; return;
-  }
+  if (pw !== ADMIN_PASSWORD) { err.textContent = '⚠ Invalid password'; err.style.display = 'block'; return; }
+  if (!url || !key) { err.textContent = '⚠ Enter Supabase URL and key'; err.style.display = 'block'; return; }
 
-  sb = supabase.createClient(url, key);
-  // Save to session so page refresh doesn't log out
+  db = supabase.createClient(url, key);
   sessionStorage.setItem('sb_url', url);
   sessionStorage.setItem('sb_key', key);
-
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   init();
 }
 
 function logout() {
-  sessionStorage.clear(); sb = null;
+  sessionStorage.clear(); db = null;
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-screen').style.display = 'flex';
 }
 
-// Auto-restore session
 window.onload = () => {
   const url = sessionStorage.getItem('sb_url');
   const key = sessionStorage.getItem('sb_key');
@@ -618,85 +411,90 @@ window.onload = () => {
   }
 };
 
-// ── Init ───────────────────────────────────────────────
+// ════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════
 async function init() {
-  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards(), loadEvents(), loadMoves()]);
+  renderCards(BOT_DATA.cards);
+  renderMoves(buildMoveList());
+  loadOverview();
+  loadPlayers();
+  loadEconomy();
+  loadActiveEvent();
 }
 
-// ── Tab navigation ─────────────────────────────────────
+// ════════════════════════════════════════════
+// TAB NAVIGATION
+// ════════════════════════════════════════════
+const TABS = ['overview','players','economy','cards','moves','events'];
 function showTab(tab) {
-  ['overview','players','economy','cards','events','moves'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
-    document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
+  TABS.forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('nav-' + t).classList.toggle('active', t === tab);
   });
 }
 
-// ── Toast ──────────────────────────────────────────────
-function toast(msg, type = 'success') {
+// ════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════
+function toast(msg, isErr = false) {
   const el = document.getElementById('toast');
-  el.textContent = (type === 'success' ? '✓ ' : '⚠ ') + msg;
-  el.className = type; el.style.display = 'block';
-  setTimeout(() => { el.style.display = 'none'; }, 3000);
+  el.textContent = msg;
+  el.className = 'show' + (isErr ? ' err' : '');
+  setTimeout(() => { el.className = ''; }, 3000);
 }
 
-// ── Modal helpers ──────────────────────────────────────
-function openModal(id)  { document.getElementById(id).classList.add('open'); }
+// ════════════════════════════════════════════
+// MODAL
+// ════════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 // OVERVIEW
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 async function loadOverview() {
-  const { data: players } = await sb.from('players').select('*');
-  if (!players) return;
+  const { data } = await db.from('players').select('wins,losses,credits,rank,username,total_matches');
+  if (!data) return;
 
-  const total = players.length;
-  const matches = Math.floor(players.reduce((s,p) => s + (p.total_matches||0), 0) / 2);
-  const credits = players.reduce((s,p) => s + (p.credits||0), 0);
+  const total = data.length;
+  const matches = data.reduce((s,p) => s + (p.total_matches||0), 0);
+  const credits = data.reduce((s,p) => s + (p.credits||0), 0);
+  const avg = total ? (matches / total).toFixed(1) : 0;
 
   document.getElementById('s-players').textContent = total.toLocaleString();
   document.getElementById('s-matches').textContent = matches.toLocaleString();
-  document.getElementById('s-credits').textContent = credits >= 1e6 ? `${(credits/1e6).toFixed(1)}M` : credits >= 1000 ? `${Math.floor(credits/1000)}K` : credits;
-  document.getElementById('s-avg').textContent = total ? Math.floor((matches * 2) / total) : 0;
-  document.getElementById('top-stats').textContent = `${total} players · ${matches} matches`;
+  document.getElementById('s-credits').textContent = credits.toLocaleString();
+  document.getElementById('s-avg').textContent = avg;
+  document.getElementById('top-stats').textContent = total + ' players | ' + matches + ' battles';
 
-  // Rank chart
-  const rankCounts = RANKS.map(r => players.filter(p => p.rank === r).length);
+  const rankCounts = {};
+  RANKS.forEach(r => rankCounts[r] = 0);
+  data.forEach(p => { if (rankCounts[p.rank] !== undefined) rankCounts[p.rank]++; });
+
   if (rankChart) rankChart.destroy();
   rankChart = new Chart(document.getElementById('rankChart'), {
-    type: 'bar',
+    type: 'doughnut',
     data: {
       labels: RANKS,
-      datasets: [{ data: rankCounts, backgroundColor: RANKS.map(r => RANK_COLORS[r]), borderRadius: 3 }]
+      datasets: [{ data: RANKS.map(r => rankCounts[r]), backgroundColor: RANKS.map(r => RANK_COLORS[r]), borderWidth: 0 }]
     },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: '#6a88a8', font: { size: 10 } }, grid: { color: '#1a2436' } },
-        y: { ticks: { color: '#6a88a8', font: { size: 10 } }, grid: { color: '#1a2436' } }
-      }
-    }
+    options: { plugins: { legend: { labels: { color: '#6a88a8', font: { size: 11 } } } } }
   });
 
-  // Top 5 players
-  const top5 = [...players].sort((a,b) => b.wins - a.wins).slice(0,5);
-  document.getElementById('top-players').innerHTML = top5.map((p,i) => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="color:var(--text3);font-family:'Share Tech Mono';font-size:12px">#${i+1}</span>
-        <span style="font-weight:500">${p.username}</span>
-        <span class="rank-badge" style="color:${RANK_COLORS[p.rank]}">${p.rank}</span>
-      </div>
-      <span style="color:var(--green);font-family:'Share Tech Mono';font-size:13px">${p.wins}W</span>
-    </div>
-  `).join('');
+  const top5 = [...data].sort((a,b) => (b.wins||0)-(a.wins||0)).slice(0,5);
+  document.getElementById('top-players').innerHTML = top5.map((p,i) =>
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">' +
+    '<span style="color:var(--text2)">#' + (i+1) + ' ' + (p.username||'Unknown') + '</span>' +
+    '<span style="color:var(--gold);font-family:Rajdhani;font-weight:700">' + (p.wins||0) + ' W</span></div>'
+  ).join('');
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 // PLAYERS
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 async function loadPlayers() {
-  const { data } = await sb.from('players').select('*').order('created_at', { ascending: false });
+  const { data } = await db.from('players').select('*').order('wins', { ascending: false });
   allPlayers = data || [];
   filteredPlayers = allPlayers;
   currentPage = 1;
@@ -705,43 +503,40 @@ async function loadPlayers() {
 
 function searchPlayers() {
   const q = document.getElementById('player-search').value.toLowerCase();
-  filteredPlayers = q
-    ? allPlayers.filter(p => p.username?.toLowerCase().includes(q) || p.user_id?.includes(q))
-    : allPlayers;
+  filteredPlayers = q ? allPlayers.filter(p =>
+    (p.username||'').toLowerCase().includes(q) || (p.user_id||'').includes(q)
+  ) : allPlayers;
   currentPage = 1;
   renderPlayers();
 }
 
 function renderPlayers() {
   const start = (currentPage - 1) * PAGE_SIZE;
-  const page  = filteredPlayers.slice(start, start + PAGE_SIZE);
-  const total = filteredPlayers.length;
-  const pages = Math.ceil(total / PAGE_SIZE) || 1;
+  const page = filteredPlayers.slice(start, start + PAGE_SIZE);
+  const totalPages = Math.ceil(filteredPlayers.length / PAGE_SIZE);
 
-  document.getElementById('page-info').textContent = `Page ${currentPage} / ${pages} (${total} players)`;
+  document.getElementById('players-tbody').innerHTML = page.map(p => {
+    const rc = RANK_COLORS[p.rank] || '#fff';
+    return '<tr>' +
+      '<td><strong>' + (p.username||'Unknown') + '</strong><br><span style="font-size:11px;color:var(--text2)">' + p.user_id + '</span></td>' +
+      '<td><span style="color:' + rc + ';font-weight:700">' + (p.rank||'Bronze') + '</span></td>' +
+      '<td style="color:var(--green)">' + (p.wins||0) + '</td>' +
+      '<td style="color:var(--red)">' + (p.losses||0) + '</td>' +
+      '<td style="color:var(--gold)">' + (p.credits||0).toLocaleString() + '</td>' +
+      '<td><button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="openPlayerModal(' + JSON.stringify(p).replace(/"/g,"'") + ')">Edit</button></td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('page-info').textContent = 'Page ' + currentPage + ' / ' + (totalPages||1);
   document.getElementById('prev-btn').disabled = currentPage <= 1;
-  document.getElementById('next-btn').disabled = currentPage >= pages;
-
-  document.getElementById('players-tbody').innerHTML = page.map(p => `
-    <tr>
-      <td><span style="font-weight:500">${p.username}</span><br><span class="mono" style="font-size:11px;color:var(--text3)">${p.user_id}</span></td>
-      <td><span class="rank-badge" style="color:${RANK_COLORS[p.rank]}">${p.rank}</span></td>
-      <td class="mono" style="color:var(--green)">${p.wins}</td>
-      <td class="mono" style="color:var(--red)">${p.losses}</td>
-      <td class="mono" style="color:var(--gold)">${(p.credits||0).toLocaleString()}</td>
-      <td><button class="btn btn-blue" style="padding:5px 12px;font-size:12px" onclick='openPlayerEdit(${JSON.stringify(p)})'>Edit</button></td>
-    </tr>
-  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text2);padding:24px">No players found</td></tr>';
+  document.getElementById('next-btn').disabled = currentPage >= totalPages;
 }
 
-function changePage(dir) {
-  const pages = Math.ceil(filteredPlayers.length / PAGE_SIZE) || 1;
-  currentPage = Math.max(1, Math.min(pages, currentPage + dir));
-  renderPlayers();
-}
+function changePage(dir) { currentPage += dir; renderPlayers(); }
 
-function openPlayerEdit(p) {
-  document.getElementById('player-modal-title').textContent = `Edit — ${p.username}`;
+function openPlayerModal(p) {
+  if (typeof p === 'string') p = JSON.parse(p.replace(/'/g,'"'));
+  document.getElementById('player-modal-title').textContent = 'Edit — ' + (p.username||p.user_id);
   document.getElementById('edit-user-id').value   = p.user_id;
   document.getElementById('edit-credits').value   = p.credits || 0;
   document.getElementById('edit-tokens').value    = p.rank_tokens || 0;
@@ -752,78 +547,69 @@ function openPlayerEdit(p) {
 }
 
 async function savePlayer() {
-  const userId = document.getElementById('edit-user-id').value;
-  const updates = {
-    credits:      parseInt(document.getElementById('edit-credits').value),
-    rank_tokens:  parseInt(document.getElementById('edit-tokens').value),
-    wins:         parseInt(document.getElementById('edit-wins').value),
-    losses:       parseInt(document.getElementById('edit-losses').value),
-    rank:         document.getElementById('edit-rank').value,
-  };
-  const { error } = await sb.from('players').update(updates).eq('user_id', userId);
-  if (error) { toast('Update failed: ' + error.message, 'error'); return; }
-  toast('Player updated!');
+  const id = document.getElementById('edit-user-id').value;
+  const { error } = await db.from('players').update({
+    credits:     parseInt(document.getElementById('edit-credits').value),
+    rank_tokens: parseInt(document.getElementById('edit-tokens').value),
+    wins:        parseInt(document.getElementById('edit-wins').value),
+    losses:      parseInt(document.getElementById('edit-losses').value),
+    rank:        document.getElementById('edit-rank').value,
+  }).eq('user_id', id);
+  if (error) { toast('Save failed: ' + error.message, true); return; }
+  toast('Player saved!');
   closeModal('player-modal');
   loadPlayers();
-  loadOverview();
 }
 
 async function deletePlayer() {
-  if (!confirm('Permanently delete this player?')) return;
-  const userId = document.getElementById('edit-user-id').value;
-  const { error } = await sb.from('players').delete().eq('user_id', userId);
-  if (error) { toast('Delete failed', 'error'); return; }
+  const id = document.getElementById('edit-user-id').value;
+  if (!confirm('Delete player ' + id + '? Cannot be undone.')) return;
+  const { error } = await db.from('players').delete().eq('user_id', id);
+  if (error) { toast('Delete failed', true); return; }
   toast('Player deleted');
   closeModal('player-modal');
   loadPlayers();
-  loadOverview();
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 // ECONOMY
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 async function loadEconomy() {
-  const { data } = await sb.from('config').select('*');
-  const cfg = {};
-  for (const row of data || []) cfg[row.key] = row.value;
-
-  const defaults = { ranked_win_credits:1000, ranked_loss_credits:300, casual_win_credits:500, casual_loss_credits:150, daily_base:500, tokens_to_rankup:3 };
-  const merged = { ...defaults, ...cfg };
-
-  document.getElementById('eco-ranked-win').value  = merged.ranked_win_credits;
-  document.getElementById('eco-ranked-loss').value = merged.ranked_loss_credits;
-  document.getElementById('eco-casual-win').value  = merged.casual_win_credits;
-  document.getElementById('eco-casual-loss').value = merged.casual_loss_credits;
-  document.getElementById('eco-daily').value        = merged.daily_base;
-  document.getElementById('eco-tokens').value       = merged.tokens_to_rankup;
+  const { data } = await db.from('config').select('*').eq('key', 'economy').single();
+  if (!data?.value) return;
+  const v = data.value;
+  document.getElementById('eco-ranked-win').value  = v.RANKED_WIN_CREDITS  || 1000;
+  document.getElementById('eco-ranked-loss').value = v.RANKED_LOSS_CREDITS || 300;
+  document.getElementById('eco-casual-win').value  = v.CASUAL_WIN_CREDITS  || 500;
+  document.getElementById('eco-casual-loss').value = v.CASUAL_LOSS_CREDITS || 150;
+  const sr = v.STREAK_REWARDS || {};
+  document.getElementById('eco-d1').value = sr[1] || 500;
+  document.getElementById('eco-d3').value = sr[3] || 1500;
+  document.getElementById('eco-d5').value = sr[5] || 2000;
+  document.getElementById('eco-d7').value = sr[7] || 5000;
 }
 
 async function saveEconomy() {
-  const fields = [
-    ['ranked_win_credits',  'eco-ranked-win'],
-    ['ranked_loss_credits', 'eco-ranked-loss'],
-    ['casual_win_credits',  'eco-casual-win'],
-    ['casual_loss_credits', 'eco-casual-loss'],
-    ['daily_base',          'eco-daily'],
-    ['tokens_to_rankup',    'eco-tokens'],
-  ];
-  for (const [key, elId] of fields) {
-    const value = parseInt(document.getElementById(elId).value);
-    await sb.from('config').upsert({ key, value }, { onConflict: 'key' });
-  }
-  toast('Economy settings saved!');
+  const payload = {
+    RANKED_WIN_CREDITS:  parseInt(document.getElementById('eco-ranked-win').value),
+    RANKED_LOSS_CREDITS: parseInt(document.getElementById('eco-ranked-loss').value),
+    CASUAL_WIN_CREDITS:  parseInt(document.getElementById('eco-casual-win').value),
+    CASUAL_LOSS_CREDITS: parseInt(document.getElementById('eco-casual-loss').value),
+    STREAK_REWARDS: {
+      1: parseInt(document.getElementById('eco-d1').value),
+      3: parseInt(document.getElementById('eco-d3').value),
+      5: parseInt(document.getElementById('eco-d5').value),
+      7: parseInt(document.getElementById('eco-d7').value),
+    }
+  };
+  const { error } = await db.from('config').upsert({ key: 'economy', value: payload }, { onConflict: 'key' });
+  if (error) { toast('Save failed: ' + error.message, true); return; }
+  toast('Economy saved!');
 }
 
-// ══════════════════════════════════════════════════════════
+// ════════════════════════════════════════════
 // CARDS
-// ══════════════════════════════════════════════════════════
-// Embedded bot data (from data.js at deploy time)
-const BOT_DATA = {"cards":[{"id":"wolf","name":"Wolf","tier":"Basic","price":10000,"type":"Storm","stats":{"hp":29,"attack":68,"defence":42,"speed":72,"agility":66},"passive":{"name":"Pack Instinct","description":"ATK and SPD +10% when HP below 40%."},"signature":"alpha_strike","description":"A fierce pack hunter.","emoji":"<:wolf:1479741864927297558>"},{"id":"bull","name":"Bull","tier":"Basic","price":12000,"type":"Titan","stats":{"hp":32,"attack":75,"defence":50,"speed":52,"agility":65},"passive":{"name":"Raging Bull","description":"Each consecutive attack +5% damage (max 3x)."},"signature":"bull_rush","description":"Pure aggression.","emoji":"<:bull:1479750058017689723>"},{"id":"crocodile","name":"Crocodile","tier":"Basic","price":15000,"type":"Primal","stats":{"hp":40,"attack":65,"defence":75,"speed":38,"agility":50},"passive":{"name":"Thick Hide","description":"First hit each turn reduced by 20%."},"signature":"death_spin","description":"Ancient and armoured.","emoji":"<:crocodile:1479750067937214475>"},{"id":"gorilla","name":"Gorilla","tier":"Basic","price":18000,"type":"Titan","stats":{"hp":45,"attack":62,"defence":70,"speed":42,"agility":44},"passive":{"name":"Ironclad","description":"DEF counts as 10% higher vs physical hits."},"signature":"silverback_rage","description":"Unmovable wall of muscle.","emoji":"<:gorilla:1479750003382816949>"},{"id":"hyena","name":"Hyena","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":28,"attack":70,"defence":42,"speed":70,"agility":68},"passive":{"name":"Frenzied","description":"Crits restore 8% max HP."},"signature":"cackle_frenzy","description":"Chaotic and relentless.","emoji":"<:hyena:1479749999720923196>"},{"id":"shark","name":"Shark","tier":"Basic","price":20000,"type":"Storm","stats":{"hp":30,"attack":74,"defence":45,"speed":68,"agility":58},"passive":{"name":"Blood Frenzy","description":"+15% damage vs opponents below 50% HP."},"signature":"feeding_frenzy","description":"Cold-blooded finisher.","emoji":"<:shark:1479751066290487357>"},{"id":"falcon","name":"Falcon","tier":"Basic","price":14000,"type":"Storm","stats":{"hp":24,"attack":52,"defence":36,"speed":88,"agility":80},"passive":{"name":"Aerial Mastery","description":"+15% base dodge chance."},"signature":"diving_strike","description":"Near untouchable.","emoji":"<:falcon:1479742843839975464>"},{"id":"komodo_dragon","name":"Komodo Dragon","tier":"Basic","price":16000,"type":"Curse","stats":{"hp":37,"attack":60,"defence":65,"speed":44,"agility":63},"passive":{"name":"Toxic Blood","description":"Physical attackers have 20% chance to be poisoned."},"signature":"komodo_venom","description":"Patient and toxic.","emoji":"<:komodo_dragon:1479750065202532352>"},{"id":"wolverine","name":"Wolverine","tier":"Basic","price":22000,"type":"Storm","stats":{"hp":33,"attack":72,"defence":55,"speed":58,"agility":55},"passive":{"name":"Undying Fury","description":"ATK +25% when HP below 20%."},"signature":"berserker","description":"Does not know how to quit.","emoji":"<:wolverine:1479751069369106562>"},{"id":"wild_boar","name":"Wild Boar","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":43,"attack":58,"defence":66,"speed":50,"agility":48},"passive":{"name":"Tusk Guard","description":"Takes 10% reduced damage from all sources."},"signature":"wild_frenzy","description":"Built like a battering ram.","emoji":"<:wild_boar:1479750061964656741>"},{"id":"lion","name":"Lion","tier":"Elite","price":50000,"type":"Inferno","stats":{"hp":41,"attack":100,"defence":68,"speed":88,"agility":89},"passive":{"name":"King's Presence","description":"At battle start, opponent ATK lowered 1 stage."},"signature":"kings_roar","description":"Commands respect before the first blow.","emoji":"<:lion:1479741856211406951>"},{"id":"leopard","name":"Leopard","tier":"Elite","price":75000,"type":"Shadow","stats":{"hp":36,"attack":88,"defence":58,"speed":105,"agility":104},"passive":{"name":"Shadow Stalk","description":"First move each battle always crits."},"signature":"shadow_claw","description":"Strikes before you know it is there.","emoji":"<:leopard:1479741850729582644>"},{"id":"jaguar","name":"Jaguar","tier":"Elite","price":100000,"type":"Storm","stats":{"hp":40,"attack":108,"defence":62,"speed":90,"agility":88},"passive":{"name":"Jaw Lock","description":"Crushing Bite and Death Roll deal +15% damage."},"signature":"jaw_of_death","description":"Once it locks on its over.","emoji":"<:jaguar:1479741841917218960>"},{"id":"grizzly_bear","name":"Grizzly Bear","tier":"Elite","price":200000,"type":"Titan","stats":{"hp":61,"attack":95,"defence":88,"speed":60,"agility":67},"passive":{"name":"Bear Endurance","description":"Recovers 5% max HP at end of each turn."},"signature":"grizzly_rage","description":"Outlasts everything.","emoji":"<:grizzly_bear:1479741835839803392>"},{"id":"king_cobra","name":"King Cobra","tier":"Ultra","price":500000,"type":"Curse","stats":{"hp":48,"attack":125,"defence":85,"speed":132,"agility":130},"passive":{"name":"Neurotoxin","description":"Poison from this card deals double damage."},"signature":"neurotoxin_blast","description":"Fast, lethal, paralyzing.","emoji":"<:king_cobra:1479741822346596516>"},{"id":"tiger","name":"Tiger","tier":"Ultra","price":1000000,"type":"Inferno","stats":{"hp":55,"attack":148,"defence":90,"speed":115,"agility":107},"passive":{"name":"Bengal Fury","description":"Every 3rd attack: guaranteed crit +20% damage."},"signature":"bengal_fury","description":"Raw power wrapped in speed and fury.","emoji":"<:tiger:1479741828193456201>"},{"id":"polar_bear","name":"Polar Bear","tier":"Ultra","price":2000000,"type":"Titan","stats":{"hp":85,"attack":128,"defence":130,"speed":72,"agility":75},"passive":{"name":"Arctic Resilience","description":"All damage reduced 12%. Cannot be poisoned."},"signature":"blizzard_slam","description":"An unstoppable glacier of force.","emoji":"<:polar_bear:1479741818009813075>"}],"moves":[{"id":"basic_attack","name":"Basic Attack","category":"Physical","power":20,"accuracy":100,"cost":0,"description":"A weak strike. Always available."},{"id":"quick_jab","name":"Quick Jab","category":"Physical","power":28,"accuracy":100,"cost":2,"priority":true,"description":"Lightning-fast. Always moves first."},{"id":"scratch","name":"Scratch","category":"Physical","power":32,"accuracy":100,"cost":2,"description":"Basic claw scratch. Cheap and reliable."},{"id":"slash","name":"Slash","category":"Physical","power":42,"accuracy":95,"cost":3,"description":"A clean swift slash."},{"id":"rake","name":"Rake","category":"Physical","power":35,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":40,"description":"Rakes claws. 40% chance to lower defence."},{"id":"lunge","name":"Lunge","category":"Physical","power":45,"accuracy":90,"cost":3,"bonusIfFirst":15,"description":"Lunges forward. +15 damage if moving first."},{"id":"pounce","name":"Pounce","category":"Physical","power":48,"accuracy":92,"cost":3,"bonusIfFirst":20,"description":"Leaps at opponent. +20 damage if moving first."},{"id":"snap","name":"Snap","category":"Physical","power":22,"accuracy":95,"cost":2,"hits":2,"description":"Two quick bites."},{"id":"claw_swipe","name":"Claw Swipe","category":"Physical","power":26,"accuracy":90,"cost":3,"hits":2,"description":"Dual claw swipes. Hits twice."},{"id":"tail_strike","name":"Tail Strike","category":"Physical","power":32,"accuracy":95,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Sweeping tail. Always lowers opponent defence."},{"id":"skewer","name":"Skewer","category":"Physical","power":38,"accuracy":88,"cost":3,"effect":"bleed","effectChance":60,"description":"60% chance to cause bleed."},{"id":"body_slam","name":"Body Slam","category":"Physical","power":62,"accuracy":90,"cost":3,"effect":"stun","effectChance":15,"description":"15% chance to stun."},{"id":"headbutt","name":"Headbutt","category":"Physical","power":55,"accuracy":88,"cost":3,"effect":"stun","effectChance":20,"description":"20% chance to stun."},{"id":"crushing_bite","name":"Crushing Bite","category":"Physical","power":65,"accuracy":85,"cost":4,"defPierce":0.2,"description":"Ignores 20% of opponent defence."},{"id":"gore","name":"Gore","category":"Physical","power":45,"accuracy":85,"cost":3,"effect":"bleed","effectChance":100,"description":"Always causes bleed for 3 turns."},{"id":"wild_thrash","name":"Wild Thrash","category":"Physical","power":22,"accuracy":85,"cost":3,"hits":"2-3","description":"Hits 2-3 times randomly."},{"id":"ground_stomp","name":"Ground Stomp","category":"Physical","power":48,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"body_press","name":"Body Press","category":"Physical","power":58,"accuracy":90,"cost":3,"useDefence":true,"description":"Uses own defence stat as attack."},{"id":"double_hit","name":"Double Hit","category":"Physical","power":38,"accuracy":88,"cost":3,"hits":2,"description":"Strikes precisely twice."},{"id":"horn_drive","name":"Horn Drive","category":"Physical","power":68,"accuracy":82,"cost":4,"description":"High power, lower accuracy."},{"id":"crunch","name":"Crunch","category":"Physical","power":70,"accuracy":88,"cost":4,"effect":"lower_defence","effectChance":40,"description":"40% chance to lower defence."},{"id":"tackle","name":"Tackle","category":"Physical","power":55,"accuracy":92,"cost":3,"description":"Reliable full-body tackle."},{"id":"ambush","name":"Ambush","category":"Physical","power":58,"accuracy":90,"cost":3,"critIfSecond":true,"description":"Guaranteed crit if opponent moved first."},{"id":"chip_away","name":"Chip Away","category":"Physical","power":52,"accuracy":100,"cost":3,"ignoreStages":true,"description":"Ignores all opponent stat stage changes."},{"id":"snap_bite","name":"Snap Bite","category":"Physical","power":55,"accuracy":90,"cost":3,"defPierce":0.1,"description":"Fast bite. Pierces 10% defence."},{"id":"stomp","name":"Stomp","category":"Physical","power":58,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"heavy_slam","name":"Heavy Slam","category":"Physical","power":82,"accuracy":80,"cost":4,"description":"Crushing full-body slam."},{"id":"reckless_charge","name":"Reckless Charge","category":"Physical","power":92,"accuracy":85,"cost":5,"recoil":0.15,"description":"15% recoil damage."},{"id":"skull_bash","name":"Skull Bash","category":"Physical","power":88,"accuracy":80,"cost":5,"effect":"stun","effectChance":25,"description":"25% stun chance."},{"id":"iron_tail","name":"Iron Tail","category":"Physical","power":78,"accuracy":82,"cost":4,"effect":"lower_defence","effectChance":35,"description":"35% chance to drop defence."},{"id":"avalanche","name":"Avalanche","category":"Physical","power":72,"accuracy":88,"cost":4,"bonusIfSecond":50,"description":"+50% power if hit first this turn."},{"id":"retaliate","name":"Retaliate","category":"Physical","power":78,"accuracy":90,"cost":4,"bonusIfDamaged":30,"description":"+30% damage if took damage last turn."},{"id":"earthquake","name":"Earthquake","category":"Physical","power":82,"accuracy":90,"cost":5,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"megaton_slam","name":"Megaton Slam","category":"Physical","power":98,"accuracy":75,"cost":5,"description":"Maximum power. High risk."},{"id":"maul","name":"Maul","category":"Physical","power":75,"accuracy":82,"cost":4,"effect":"bleed","effectChance":80,"description":"80% chance to cause bleed."},{"id":"tusk_ram","name":"Tusk Ram","category":"Physical","power":72,"accuracy":85,"cost":4,"effect":"bleed","effectChance":50,"description":"50% chance to cause bleed."},{"id":"trample","name":"Trample","category":"Physical","power":65,"accuracy":88,"cost":4,"effect":"lower_agility","effectChance":60,"description":"60% chance to lower agility."},{"id":"death_roll","name":"Death Roll","category":"Physical","power":122,"accuracy":75,"cost":6,"description":"Grab and roll violently. Save up for this."},{"id":"giga_impact","name":"Giga Impact","category":"Physical","power":132,"accuracy":70,"cost":6,"skipNextTurn":true,"description":"Devastating impact. Must rest next turn."},{"id":"final_strike","name":"Final Strike","category":"Physical","power":112,"accuracy":80,"cost":6,"bonusIfLowHp":true,"description":"+50% power if user below 30% HP."},{"id":"obliterate","name":"Obliterate","category":"Physical","power":128,"accuracy":72,"cost":6,"defPierce":0.3,"description":"Pierces 30% of all defence."},{"id":"flail","name":"Flail","category":"Physical","power":20,"accuracy":100,"cost":2,"scalesMissingHp":true,"description":"Power scales with missing HP. Max 150."},{"id":"sucker_punch","name":"Sucker Punch","category":"Physical","power":68,"accuracy":90,"cost":3,"priority":true,"failsVsSupport":true,"description":"Priority but fails vs support moves."},{"id":"last_resort","name":"Last Resort","category":"Physical","power":82,"accuracy":85,"cost":4,"bonusPerTurn":8,"description":"+8 power each turn survived."},{"id":"fang_strike","name":"Fang Strike","category":"Physical","power":50,"accuracy":88,"cost":3,"effect":"poison","effectChance":30,"description":"30% chance to poison."},{"id":"poison_fang","name":"Poison Fang","category":"Physical","power":48,"accuracy":88,"cost":3,"effect":"poison","effectChance":50,"description":"50% chance to poison."},{"id":"constrict","name":"Constrict","category":"Physical","power":40,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"roar","name":"Roar","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_atk_def","effectChance":100,"description":"Lowers opponent ATK and DEF by 1 stage."},{"id":"intimidate","name":"Intimidate","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"lower_atk_2","effectChance":100,"description":"Sharply lowers opponent ATK by 2 stages."},{"id":"taunt","name":"Taunt","category":"Special","power":0,"accuracy":90,"cost":2,"effect":"taunt","effectChance":100,"description":"Forces opponent to use only Physical moves for 2 turns."},{"id":"polar_howl","name":"Polar Howl","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_spd_2","effectChance":100,"description":"Sharply lowers opponent speed."},{"id":"snarl","name":"Snarl","category":"Special","power":0,"accuracy":95,"cost":2,"effect":"lower_atk","effectChance":100,"description":"Lowers opponent attack by 1 stage."},{"id":"terrify","name":"Terrify","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"lower_all","effectChance":100,"description":"Lowers ALL opponent stats by 1 stage."},{"id":"screech","name":"Screech","category":"Special","power":0,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Lowers opponent defence by 1 stage."},{"id":"leer","name":"Leer","category":"Special","power":0,"accuracy":100,"cost":1,"effect":"lower_defence","effectChance":100,"description":"Menacing glare. Lowers defence. Very cheap."},{"id":"war_cry","name":"War Cry","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises own attack by 1 stage."},{"id":"feral_rage","name":"Feral Rage","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"feral_rage_buff","effectChance":100,"description":"ATK +2 stages, DEF -1 stage."},{"id":"pack_howl","name":"Pack Howl","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_agi","effectChance":100,"maxStacks":2,"description":"Raises SPD and AGI. Max 2 uses per battle."},{"id":"predator_instinct","name":"Predator Instinct","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit","effectChance":100,"description":"Raises crit chance for 3 turns."},{"id":"blood_scent","name":"Blood Scent","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"next_hit_bonus","effectChance":100,"description":"Next attack deals +40% damage."},{"id":"apex_presence","name":"Apex Presence","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"raise_all_stats","effectChance":100,"description":"Raises all own stats by 1 stage."},{"id":"sharpen","name":"Sharpen","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises attack by 1 stage."},{"id":"focus_energy","name":"Focus Energy","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit_2","effectChance":100,"description":"Greatly raises crit chance for 2 turns."},{"id":"hone_instincts","name":"Hone Instincts","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_spd","effectChance":100,"description":"Raises ATK and SPD by 1 stage each."},{"id":"coil","name":"Coil","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def_acc","effectChance":100,"description":"Raises ATK, DEF, and accuracy by 1 each."},{"id":"bulk_up","name":"Bulk Up","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def","effectChance":100,"description":"Raises ATK and DEF by 1 stage each."},{"id":"agility","name":"Agility","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"toxic_spit","name":"Toxic Spit","category":"Special","power":22,"accuracy":85,"cost":2,"effect":"poison","effectChance":100,"description":"Poisons opponent for 4 turns."},{"id":"venom_fangs","name":"Venom Fangs","category":"Special","power":48,"accuracy":85,"cost":4,"effect":"poison","effectChance":100,"description":"Damage and guaranteed poison."},{"id":"serpent_gaze","name":"Serpent Gaze","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"death_stare","name":"Death Stare","category":"Special","power":0,"accuracy":90,"cost":4,"effect":"hp_drain_dot","effectChance":100,"description":"Opponent loses 10% max HP/turn for 3 turns."},{"id":"primal_surge","name":"Primal Surge","category":"Special","power":30,"accuracy":90,"cost":4,"scaleMissingHp":true,"description":"Power scales with missing HP."},{"id":"acid_spray","name":"Acid Spray","category":"Special","power":30,"accuracy":88,"cost":3,"effect":"lower_defence","effectChance":100,"description":"Damage + always lowers opponent DEF."},{"id":"venom_drip","name":"Venom Drip","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"toxic","effectChance":100,"description":"Applies toxic — damage increases each turn."},{"id":"hex","name":"Hex","category":"Special","power":38,"accuracy":92,"cost":3,"doubleVsStatus":true,"description":"Double power vs opponents with status conditions."},{"id":"lash_out","name":"Lash Out","category":"Special","power":40,"accuracy":90,"cost":3,"doubleIfStatDropped":true,"description":"Double power if your stats were lowered this turn."},{"id":"venoshock","name":"Venoshock","category":"Special","power":35,"accuracy":90,"cost":3,"doubleVsPoison":true,"description":"Double damage against poisoned opponents."},{"id":"brace","name":"Brace","category":"Support","power":0,"accuracy":100,"cost":1,"effect":"brace","effectChance":100,"description":"Reduces incoming damage by 50% this turn."},{"id":"recover","name":"Recover","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"heal_20","effectChance":100,"description":"Restores 20% of max HP."},{"id":"second_wind","name":"Second Wind","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"second_wind","effectChance":100,"description":"Restores 15% HP + clears one status."},{"id":"fortify","name":"Fortify","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Raises defence by 2 stages."},{"id":"counter_stance","name":"Counter Stance","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"counter","effectChance":100,"description":"Reflects 30% of next hit back."},{"id":"endure","name":"Endure","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"endure","effectChance":100,"description":"Cannot be reduced below 1 HP this turn."},{"id":"camouflage","name":"Camouflage","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"evasion_boost","effectChance":100,"description":"Next attack against you has 50% reduced accuracy."},{"id":"adrenaline","name":"Adrenaline","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"last_stand","name":"Last Stand","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"last_stand","effectChance":100,"requiresLowHp":true,"description":"Only below 25% HP. Raises all stats by 2 stages."},{"id":"shed_skin","name":"Shed Skin","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"cleanse_status","effectChance":100,"description":"Cleanses all status conditions."},{"id":"dig_in","name":"Dig In","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_def","effectChance":100,"description":"Raises defence by 1 stage."},{"id":"regenerate","name":"Regenerate","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_regen","effectChance":100,"description":"Restore 10% HP for the next 3 turns."},{"id":"mirror_coat","name":"Mirror Coat","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"mirror_coat","effectChance":100,"description":"Reflects 50% of special move damage back."},{"id":"iron_defense","name":"Iron Defense","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Sharply raises defence by 2 stages."},{"id":"focus","name":"Focus","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_acc","effectChance":100,"description":"Raises accuracy by 1 stage."},{"id":"stealth","name":"Stealth","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"stealth","effectChance":100,"description":"Next move this battle is guaranteed to crit."},{"id":"blood_rage","name":"Blood Rage","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"blood_rage","effectChance":100,"description":"ATK +3 stages, lose 5% HP/turn for 3 turns."},{"id":"hibernation","name":"Hibernation","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_35","effectChance":100,"description":"Restores 35% HP but skips next turn."}],"signatures":[{"id":"alpha_strike","name":"Alpha Strike","category":"Physical","power":85,"accuracy":92,"cost":4,"effect":"raise_atk_spd","effectChance":100,"description":"[WOLF] Raises own ATK and SPD after hitting."},{"id":"bull_rush","name":"Bull Rush","category":"Physical","power":110,"accuracy":85,"cost":5,"recoil":0.1,"effect":"stun","effectChance":35,"description":"[BULL] 35% stun chance. 10% recoil."},{"id":"death_spin","name":"Death Spin","category":"Physical","power":100,"accuracy":80,"cost":5,"hits":2,"defPierce":0.25,"description":"[CROC] Hits twice. Pierces 25% DEF each hit."},{"id":"silverback_rage","name":"Silverback Rage","category":"Physical","power":105,"accuracy":85,"cost":5,"effect":"raise_atk_def","effectChance":100,"description":"[GORILLA] Raises ATK and DEF after hitting."},{"id":"cackle_frenzy","name":"Cackle Frenzy","category":"Physical","power":25,"accuracy":90,"cost":4,"hits":"3-5","description":"[HYENA] Hits 3-5 times unpredictably."},{"id":"feeding_frenzy","name":"Feeding Frenzy","category":"Physical","power":90,"accuracy":88,"cost":5,"bonusIfBleeding":40,"description":"[SHARK] +40 damage if opponent is bleeding."},{"id":"diving_strike","name":"Diving Strike","category":"Physical","power":95,"accuracy":90,"cost":4,"priority":true,"critIfFirst":true,"description":"[FALCON] Priority. Crits if you move first."},{"id":"komodo_venom","name":"Komodo Venom","category":"Special","power":55,"accuracy":88,"cost":4,"effect":"toxic","effectChance":100,"description":"[KOMODO] Applies toxic status."},{"id":"berserker","name":"Berserker","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"berserker_stance","effectChance":100,"description":"[WOLVERINE] ATK x2, take 20% more damage for 2 turns."},{"id":"wild_frenzy","name":"Wild Frenzy","category":"Physical","power":115,"accuracy":82,"cost":5,"effect":"lower_atk_def","effectChance":100,"description":"[WILD BOAR] Lowers own ATK and DEF after use."},{"id":"kings_roar","name":"King's Roar","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"kings_roar_effect","effectChance":100,"description":"[LION] Lowers ALL opponent stats by 1 stage."},{"id":"shadow_claw","name":"Shadow Claw","category":"Physical","power":78,"accuracy":95,"cost":4,"highCritRatio":true,"description":"[LEOPARD] High crit ratio. Strikes from darkness."},{"id":"jaw_of_death","name":"Jaw of Death","category":"Physical","power":140,"accuracy":78,"cost":6,"defPierce":0.4,"description":"[JAGUAR] Pierces 40% of all defence."},{"id":"grizzly_rage","name":"Grizzly Rage","category":"Physical","power":100,"accuracy":85,"cost":5,"effect":"raise_all_stats","effectChance":100,"description":"[GRIZZLY] Raises all stats after landing."},{"id":"neurotoxin_blast","name":"Neurotoxin Blast","category":"Special","power":70,"accuracy":85,"cost":5,"effect":"toxic","effectChance":100,"description":"[KING COBRA] Applies toxic + poisons for 4 turns."},{"id":"bengal_fury","name":"Bengal Fury","category":"Physical","power":110,"accuracy":88,"cost":5,"hits":2,"description":"[TIGER] Hits twice. Both have raised crit chance."},{"id":"blizzard_slam","name":"Blizzard Slam","category":"Physical","power":120,"accuracy":82,"cost":6,"effect":"lower_spd_2","effectChance":100,"description":"[POLAR BEAR] Sharply drops opponent speed."}],"levelUpMoves":{"wolf":{"startingMoves":["scratch","quick_jab","lunge","snarl"],"tree":{"5":"slash","8":"pack_howl","12":"predator_instinct","16":"pounce","20":"feral_rage","25":"blood_scent","30":"hone_instincts","35":"wild_thrash","40":"reckless_charge","45":"roar","50":"alpha_strike"}},"bull":{"startingMoves":["tackle","headbutt","lunge","leer"],"tree":{"5":"ground_stomp","8":"horn_drive","12":"wild_thrash","16":"heavy_slam","20":"bulk_up","25":"tusk_ram","30":"trample","35":"reckless_charge","40":"earthquake","45":"skull_bash","50":"bull_rush"}},"crocodile":{"startingMoves":["snap","tail_strike","brace","dig_in"],"tree":{"5":"crushing_bite","8":"gore","12":"body_press","16":"death_roll","20":"fortify","25":"snap_bite","30":"endure","35":"maul","40":"avalanche","45":"iron_defense","50":"death_spin"}},"gorilla":{"startingMoves":["scratch","body_slam","dig_in","roar"],"tree":{"5":"headbutt","8":"body_press","12":"fortify","16":"heavy_slam","20":"bulk_up","25":"ground_stomp","30":"iron_defense","35":"earthquake","40":"endure","45":"megaton_slam","50":"silverback_rage"}},"hyena":{"startingMoves":["scratch","quick_jab","snarl","taunt"],"tree":{"5":"slash","8":"feral_rage","12":"wild_thrash","16":"adrenaline","20":"blood_scent","25":"crushing_bite","30":"lash_out","35":"reckless_charge","40":"focus_energy","45":"blood_rage","50":"cackle_frenzy"}},"shark":{"startingMoves":["snap","lunge","leer","scratch"],"tree":{"5":"gore","8":"blood_scent","12":"crushing_bite","16":"predator_instinct","20":"fang_strike","25":"reckless_charge","30":"hex","35":"maul","40":"death_roll","45":"obliterate","50":"feeding_frenzy"}},"falcon":{"startingMoves":["quick_jab","scratch","camouflage","adrenaline"],"tree":{"5":"pounce","8":"ambush","12":"predator_instinct","16":"hone_instincts","20":"counter_stance","25":"focus_energy","30":"sucker_punch","35":"stealth","40":"slash","45":"final_strike","50":"diving_strike"}},"komodo_dragon":{"startingMoves":["scratch","tail_strike","toxic_spit","leer"],"tree":{"5":"poison_fang","8":"fang_strike","12":"acid_spray","16":"venom_drip","20":"shed_skin","25":"hex","30":"venoshock","35":"venom_fangs","40":"death_stare","45":"crushing_bite","50":"komodo_venom"}},"wolverine":{"startingMoves":["scratch","claw_swipe","second_wind","snarl"],"tree":{"5":"slash","8":"feral_rage","12":"endure","16":"retaliate","20":"blood_rage","25":"maul","30":"lash_out","35":"reckless_charge","40":"chip_away","45":"last_stand","50":"berserker"}},"wild_boar":{"startingMoves":["tackle","headbutt","brace","leer"],"tree":{"5":"gore","8":"tusk_ram","12":"body_slam","16":"fortify","20":"trample","25":"horn_drive","30":"reckless_charge","35":"endure","40":"iron_defense","45":"skull_bash","50":"wild_frenzy"}},"lion":{"startingMoves":["slash","pounce","war_cry","snarl"],"tree":{"5":"claw_swipe","8":"roar","12":"predator_instinct","16":"feral_rage","20":"blood_scent","25":"ambush","30":"hone_instincts","35":"intimidate","40":"focus_energy","45":"giga_impact","50":"kings_roar"}},"leopard":{"startingMoves":["quick_jab","ambush","camouflage","scratch"],"tree":{"5":"pounce","8":"stealth","12":"predator_instinct","16":"blood_scent","20":"sucker_punch","25":"counter_stance","30":"focus_energy","35":"claw_swipe","40":"lash_out","45":"final_strike","50":"shadow_claw"}},"jaguar":{"startingMoves":["slash","crushing_bite","pounce","blood_scent"],"tree":{"5":"crunch","8":"feral_rage","12":"predator_instinct","16":"death_roll","20":"hone_instincts","25":"snap_bite","30":"maul","35":"war_cry","40":"obliterate","45":"giga_impact","50":"jaw_of_death"}},"grizzly_bear":{"startingMoves":["body_slam","claw_swipe","dig_in","roar"],"tree":{"5":"maul","8":"body_press","12":"fortify","16":"recover","20":"bulk_up","25":"heavy_slam","30":"iron_defense","35":"earthquake","40":"regenerate","45":"endure","50":"grizzly_rage"}},"king_cobra":{"startingMoves":["quick_jab","toxic_spit","serpent_gaze","leer"],"tree":{"5":"poison_fang","8":"venom_fangs","12":"coil","16":"venom_drip","20":"acid_spray","25":"hex","30":"venoshock","35":"death_stare","40":"shed_skin","45":"terrify","50":"neurotoxin_blast"}},"tiger":{"startingMoves":["slash","pounce","claw_swipe","feral_rage"],"tree":{"5":"blood_scent","8":"predator_instinct","12":"crushing_bite","16":"hone_instincts","20":"war_cry","25":"focus_energy","30":"maul","35":"reckless_charge","40":"primal_surge","45":"obliterate","50":"bengal_fury"}},"polar_bear":{"startingMoves":["body_slam","heavy_slam","fortify","roar"],"tree":{"5":"body_press","8":"polar_howl","12":"iron_defense","16":"recover","20":"bulk_up","25":"earthquake","30":"avalanche","35":"regenerate","40":"endure","45":"apex_presence","50":"blizzard_slam"}}}};
-
-function loadCards() {
-  renderCards(BOT_DATA.cards);
-}
-
+// ════════════════════════════════════════════
 function filterCards() {
   const q    = document.getElementById('card-search').value.toLowerCase();
   const tier = document.getElementById('card-tier-filter').value;
@@ -838,176 +624,202 @@ function filterCards() {
 
 function renderCards(cards) {
   const tiers = ['Basic','Elite','Ultra'];
-  const tierColors = { Basic:'var(--text2)', Elite:'var(--blue)', Ultra:'var(--gold)' };
+  const tierColors = {Basic:'var(--text2)',Elite:'var(--blue)',Ultra:'var(--gold)'};
   const lu = BOT_DATA.levelUpMoves;
 
-  document.getElementById('cards-container').innerHTML = cards.length === 0
-    ? `<div class="panel" style="text-align:center;padding:48px;color:var(--text2)">No cards match your filters.</div>`
-    : tiers.map(tier => {
-        const tc = cards.filter(c => c.tier === tier);
-        if (!tc.length) return '';
-        return `
-          <div style="margin-bottom:24px">
-            <p style="font-size:11px;color:${tierColors[tier]};letter-spacing:3px;text-transform:uppercase;font-family:Rajdhani;font-weight:700;margin-bottom:12px">── ${tier} Tier (${tc.length} cards) ──</p>
-            <div class="card-grid">
-              ${tc.map(card => {
-                const tree = lu[card.id];
-                const startMoves = tree?.startingMoves || [];
-                const learnMoves = Object.entries(tree?.tree || {}).map(([lvl,id]) => ({lvl,id}));
-                const sigMove = BOT_DATA.signatures.find(s => s.id === card.signature);
-                const bst = Object.values(card.stats||{}).reduce((a,b)=>a+b,0);
-                return `
-                <div class="card-item panel" onclick="toggleCardDetail('${card.id}')">
-                  <div class="card-item-header">
-                    <div style="display:flex;align-items:center;gap:8px">
-                      <span style="font-size:20px">${card.emoji||'🃏'}</span>
-                      <div>
-                        <div class="card-item-name">${card.name}</div>
-                        <div style="font-size:11px;color:var(--text2);font-family:'Share Tech Mono'">${card.id}</div>
-                      </div>
-                    </div>
-                    <div style="text-align:right">
-                      <span class="tier-badge tier-${card.tier}">${card.type}</span>
-                      <div style="font-size:10px;color:var(--text2);margin-top:3px">BST ${bst}</div>
-                    </div>
-                  </div>
-                  <div class="card-stats" style="margin-top:10px">
-                    ${['hp','attack','defence','speed','agility'].map(s => `
-                      <div class="card-stat">
-                        <div class="card-stat-key">${s.slice(0,3).toUpperCase()}</div>
-                        <div class="card-stat-val">${card.stats?.[s]||0}</div>
-                      </div>`).join('')}
-                  </div>
-                  <div class="card-detail" id="detail-${card.id}">
-                    <div class="detail-row"><span>Price</span><span>${(card.price||0).toLocaleString()} cr</span></div>
-                    <div class="detail-row"><span>Passive</span><span style="max-width:200px;text-align:right">${card.passive?.name||'—'}</span></div>
-                    <div class="detail-row" style="font-size:11px;color:var(--text3)"><span></span><span style="max-width:220px;text-align:right;font-style:italic">${card.passive?.description||''}</span></div>
-                    <div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--text2);letter-spacing:1px;text-transform:uppercase">Starting Moves</div>
-                    <div class="movelist">${startMoves.map(id=>`<span class="move-pill">${id}</span>`).join('')}</div>
-                    <div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--text2);letter-spacing:1px;text-transform:uppercase">Level-Up Moves</div>
-                    <div class="movelist">${learnMoves.map(({lvl,id})=>`<span class="move-pill">L${lvl}: ${id}</span>`).join('')}</div>
-                    ${sigMove ? `<div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--gold);letter-spacing:1px;text-transform:uppercase">Signature (L50)</div>
-                    <div class="movelist"><span class="move-pill sig">${sigMove.name}</span></div>
-                    <div style="font-size:11px;color:var(--text2);margin-top:4px;font-style:italic">${sigMove.description||''}</div>` : ''}
-                    <div style="margin-top:12px;display:flex;gap:6px">
-                      <button class="btn btn-blue" style="flex:1;padding:5px;font-size:12px" onclick="event.stopPropagation();openCardModal(${JSON.stringify(card).replace(/"/g,'&quot;')})">✏️ Edit Stats</button>
-                    </div>
-                  </div>
-                </div>`}).join('')}
-            </div>
-          </div>`;
-      }).join('');
+  if (!cards.length) {
+    document.getElementById('cards-container').innerHTML =
+      '<div class="panel" style="text-align:center;padding:40px;color:var(--text2)">No cards match.</div>';
+    return;
+  }
+
+  var html = '';
+  tiers.forEach(function(tier) {
+    var tc = cards.filter(function(c){ return c.tier === tier; });
+    if (!tc.length) return;
+    html += '<div style="margin-bottom:24px">';
+    html += '<p style="font-size:11px;color:' + tierColors[tier] + ';letter-spacing:3px;text-transform:uppercase;font-family:Rajdhani;font-weight:700;margin-bottom:12px">── ' + tier + ' Tier (' + tc.length + ' cards) ──</p>';
+    html += '<div class="card-grid">';
+    tc.forEach(function(card) {
+      var tree = lu[card.id] || {};
+      var startMoves = tree.startingMoves || [];
+      var learnMoves = Object.entries(tree.tree || {});
+      var sigMove = BOT_DATA.signatures.find(function(s){ return s.id === card.signature; });
+      var bst = Object.values(card.stats || {}).reduce(function(a,b){ return a+b; }, 0);
+
+      html += '<div class="card-item" onclick="toggleDetail(\'' + card.id + '\')">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between">';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<span style="font-size:20px">' + (card.emoji || '🃏') + '</span>';
+      html += '<div><div class="card-item-name">' + card.name + '</div>';
+      html += '<div style="font-size:11px;color:var(--text2);font-family:monospace">' + card.id + '</div></div></div>';
+      html += '<div style="text-align:right"><span class="tier-badge tier-' + card.tier + '">' + card.type + '</span>';
+      html += '<div style="font-size:10px;color:var(--text2);margin-top:3px">BST ' + bst + '</div></div></div>';
+
+      html += '<div class="card-stats">';
+      ['hp','attack','defence','speed','agility'].forEach(function(s) {
+        html += '<div class="card-stat"><div class="card-stat-key">' + s.slice(0,3).toUpperCase() + '</div>';
+        html += '<div class="card-stat-val">' + (card.stats[s] || 0) + '</div></div>';
+      });
+      html += '</div>';
+
+      html += '<div class="card-detail" id="detail-' + card.id + '">';
+      html += '<div class="detail-row"><span class="dk">Price</span><span class="dv">' + (card.price||0).toLocaleString() + ' cr</span></div>';
+      html += '<div class="detail-row"><span class="dk">Passive</span><span class="dv">' + (card.passive && card.passive.name || '—') + '</span></div>';
+      if (card.passive && card.passive.description) {
+        html += '<div style="font-size:11px;color:var(--text2);font-style:italic;margin-bottom:6px;text-align:right">' + card.passive.description + '</div>';
+      }
+      html += '<div class="subsection-label">Starting Moves</div><div class="movelist">';
+      startMoves.forEach(function(id){ html += '<span class="move-pill">' + id + '</span>'; });
+      html += '</div>';
+      html += '<div class="subsection-label">Level-Up Moves</div><div class="movelist">';
+      learnMoves.forEach(function(e){ html += '<span class="move-pill">L' + e[0] + ': ' + e[1] + '</span>'; });
+      html += '</div>';
+      if (sigMove) {
+        html += '<div class="subsection-label" style="color:var(--gold)">Signature (L50)</div>';
+        html += '<div class="movelist"><span class="move-pill sig">' + sigMove.name + '</span></div>';
+        html += '<div style="font-size:11px;color:var(--text2);margin-top:4px;font-style:italic">' + (sigMove.description||'') + '</div>';
+      }
+      html += '</div></div>';
+    });
+    html += '</div></div>';
+  });
+
+  document.getElementById('cards-container').innerHTML = html;
 }
 
-function toggleCardDetail(cardId) {
-  const el = document.getElementById('detail-' + cardId);
+function toggleDetail(id) {
+  var el = document.getElementById('detail-' + id);
   if (el) el.classList.toggle('open');
 }
 
-function openCardModal(card) {
-  cardIsNew = !card;
-  document.getElementById('card-modal-title').textContent = card ? `Edit — ${card.name}` : 'New Card';
-  document.getElementById('card-edit-id-orig').value = card?.id || '';
-  document.getElementById('card-id').value      = card?.id || '';
-  document.getElementById('card-id').disabled   = !!card;
-  document.getElementById('card-name').value    = card?.name || '';
-  document.getElementById('card-tier').value    = card?.tier || 'Basic';
-  document.getElementById('card-type').value    = card?.type || 'Storm';
-  document.getElementById('card-price').value   = card?.price || 10000;
-  document.getElementById('card-emoji').value   = card?.emoji || '';
-  document.getElementById('card-desc').value    = card?.description || '';
-  document.getElementById('cs-hp').value        = card?.stats?.hp || 50;
-  document.getElementById('cs-attack').value    = card?.stats?.attack || 50;
-  document.getElementById('cs-defence').value   = card?.stats?.defence || 50;
-  document.getElementById('cs-speed').value     = card?.stats?.speed || 50;
-  document.getElementById('cs-agility').value   = card?.stats?.agility || 50;
-  openModal('card-modal');
-}
-
-async function saveCard() {
-  const id = document.getElementById('card-id').value.trim();
-  if (!id) { toast('Card ID is required', 'error'); return; }
-  const payload = {
-    id,
-    name:        document.getElementById('card-name').value,
-    tier:        document.getElementById('card-tier').value,
-    type:        document.getElementById('card-type').value,
-    price:       parseInt(document.getElementById('card-price').value),
-    emoji:       document.getElementById('card-emoji').value,
-    description: document.getElementById('card-desc').value,
-    stats: {
-      hp:      parseInt(document.getElementById('cs-hp').value),
-      attack:  parseInt(document.getElementById('cs-attack').value),
-      defence: parseInt(document.getElementById('cs-defence').value),
-      speed:   parseInt(document.getElementById('cs-speed').value),
-      agility: parseInt(document.getElementById('cs-agility').value),
-    }
-  };
-  const { error } = await sb.from('cards').upsert(payload, { onConflict: 'id' });
-  if (error) { toast('Save failed: ' + error.message, 'error'); return; }
-  toast(cardIsNew ? 'Card created!' : 'Card updated!');
-  closeModal('card-modal');
-  loadCards();
-}
-
-async function deleteCard(id) {
-  if (!confirm(`Delete card "${id}"?`)) return;
-  const { error } = await sb.from('cards').delete().eq('id', id);
-  if (error) { toast('Delete failed', 'error'); return; }
-  toast('Card deleted');
-  loadCards();
-}
-
-// ── Moves Tab ───────────────────────────────────────────
-
-function loadMoves() {
-  const combined = [
-    ...BOT_DATA.moves.map(m => ({ ...m, _sig: false })),
-    ...BOT_DATA.signatures.map(m => ({ ...m, _sig: true })),
-  ].sort((a,b) => a.name.localeCompare(b.name));
-  renderMoves(combined);
+// ════════════════════════════════════════════
+// MOVES
+// ════════════════════════════════════════════
+function buildMoveList() {
+  var normal = BOT_DATA.moves.map(function(m){ return Object.assign({}, m, {_sig: false}); });
+  var sigs   = BOT_DATA.signatures.map(function(m){ return Object.assign({}, m, {_sig: true}); });
+  return normal.concat(sigs).sort(function(a,b){ return a.name.localeCompare(b.name); });
 }
 
 function filterMoves() {
-  const q    = document.getElementById('move-search').value.toLowerCase();
-  const cat  = document.getElementById('move-cat-filter').value;
-  const type = document.getElementById('move-type-filter').value;
+  var q   = document.getElementById('move-search').value.toLowerCase();
+  var cat = document.getElementById('move-cat-filter').value;
+  var sig = document.getElementById('move-sig-filter').value;
 
-  let moves = [...BOT_DATA.moves];
-  let sigs  = [...BOT_DATA.signatures];
+  var all = buildMoveList();
 
-  if (type === 'normal')    sigs  = [];
-  if (type === 'signature') moves = [];
+  var filtered = all.filter(function(m) {
+    if (sig === 'normal'    && m._sig)  return false;
+    if (sig === 'signature' && !m._sig) return false;
+    if (cat && m.category !== cat)      return false;
+    if (q && !m.name.toLowerCase().includes(q) && !m.id.includes(q) && !(m.effect||'').includes(q)) return false;
+    return true;
+  });
 
-  const combined = [
-    ...moves.map(m => ({ ...m, _sig: false })),
-    ...sigs.map(m  => ({ ...m, _sig: true  })),
-  ].filter(m =>
-    (!q   || m.name.toLowerCase().includes(q) || m.id.includes(q) || (m.effect||'').includes(q)) &&
-    (!cat || m.category === cat)
-  ).sort((a,b) => a.name.localeCompare(b.name));
-
-  renderMoves(combined);
+  renderMoves(filtered);
 }
 
 function renderMoves(moves) {
-  const catClass = { Physical:'cat-physical', Special:'cat-special', Status:'cat-status' };
-  const mono = 'font-family:monospace;';
-  const rows = moves.map(m => {
-    const sigBadge = m._sig ? ' <span class="sig-badge">SIG</span>' : '';
-    const typeCell = m._sig ? '<span style="color:var(--gold)">Signature</span>' : 'Normal';
-    return '<tr>' +
-      '<td style="' + mono + 'font-size:11px;color:var(--text2)">' + m.id + '</td>' +
-      '<td style="font-weight:600">' + m.name + sigBadge + '</td>' +
-      '<td class="' + (catClass[m.category]||'') + '" style="font-size:12px">' + (m.category||'—') + '</td>' +
-      '<td style="color:var(--red);' + mono + '">' + (m.power||'—') + '</td>' +
-      '<td style="' + mono + '">' + (m.accuracy != null ? m.accuracy+'%' : '—') + '</td>' +
-      '<td style="color:var(--gold);' + mono + '">' + (m.cost != null ? m.cost+'⚡' : '—') + '</td>' +
-      '<td style="font-size:11px;color:var(--text2)">' + (m.effect||'—') + '</td>' +
-      '<td style="font-size:11px">' + typeCell + '</td>' +
-    '</tr>';
+  var tbody = document.getElementById('moves-tbody');
+  var countEl = document.getElementById('move-count');
+  if (!tbody) return;
+
+  countEl.textContent = moves.length + ' moves';
+
+  var html = '';
+  moves.forEach(function(m) {
+    var catCls = 'cat-' + (m.category || '');
+    var sigBadge = m._sig ? '<span class="sig-badge">SIG</span>' : '';
+    html += '<tr>';
+    html += '<td style="font-family:monospace;font-size:11px;color:var(--text2)">' + m.id + '</td>';
+    html += '<td style="font-weight:600">' + m.name + sigBadge + '</td>';
+    html += '<td class="' + catCls + '" style="font-size:12px">' + (m.category || '—') + '</td>';
+    html += '<td style="color:var(--red);font-family:monospace">' + (m.power != null ? m.power : '—') + '</td>';
+    html += '<td style="font-family:monospace">' + (m.accuracy != null ? m.accuracy + '%' : '—') + '</td>';
+    html += '<td style="color:var(--gold);font-family:monospace">' + (m.cost != null ? m.cost + '⚡' : '—') + '</td>';
+    html += '<td style="font-size:11px;color:var(--text2)">' + (m.effect || '—') + '</td>';
+    html += '<td style="font-size:11px">' + (m._sig ? '<span style="color:var(--gold)">Signature</span>' : 'Normal') + '</td>';
+    html += '</tr>';
   });
-  document.getElementById('moves-tbody').innerHTML = rows.join('');
+
+  tbody.innerHTML = html;
+}
+
+// ════════════════════════════════════════════
+// EVENTS
+// ════════════════════════════════════════════
+async function loadActiveEvent() {
+  var panel = document.getElementById('active-event-content');
+  var lbDiv = document.getElementById('event-leaderboard-content');
+
+  var res = await db.from('active_event').select('*').eq('key','current').single();
+  var data = res.data;
+
+  if (!data) {
+    panel.innerHTML = '<span style="color:var(--text2)">No event running.</span>';
+    lbDiv.innerHTML = '<span style="color:var(--text2)">No active event.</span>';
+    return;
+  }
+
+  var now = new Date(), ends = new Date(data.ends_at);
+  var ms = ends - now;
+  var d = Math.floor(ms/86400000), h = Math.floor((ms%86400000)/3600000);
+  var timeStr = ms <= 0 ? '<span style="color:var(--red)">EXPIRED</span>' : '<span style="color:var(--green)">' + d + 'd ' + h + 'h remaining</span>';
+
+  panel.innerHTML =
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:18px">' +
+    '<div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Event ID</div>' +
+    '<div style="color:var(--gold);font-size:18px;font-family:Rajdhani;font-weight:700">' + data.event_id + '</div></div>' +
+    '<div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Time Left</div>' +
+    '<div style="font-size:16px;font-family:Rajdhani;font-weight:700">' + timeStr + '</div></div>' +
+    '<div><div style="color:var(--text2);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px">Started</div>' +
+    '<div style="font-size:13px">' + new Date(data.started_at).toLocaleDateString() + '</div></div></div>' +
+    '<button class="btn btn-red" onclick="endEvent(\'' + data.event_id + '\')">⏹ End Event Now</button>';
+
+  var lb = await db.from('event_progress').select('user_id,ep,total_ep_earned,purchased_cards').eq('event_id',data.event_id).order('total_ep_earned',{ascending:false}).limit(10);
+  var epData = lb.data || [];
+
+  if (epData.length) {
+    var rows = epData.map(function(r,i) {
+      var cards = Array.isArray(r.purchased_cards) ? r.purchased_cards.join(', ') || '—' : '—';
+      return '<tr><td style="color:var(--text2)">#' + (i+1) + '</td><td>' + r.user_id + '</td>' +
+        '<td style="color:var(--green)">' + r.total_ep_earned + ' EP</td>' +
+        '<td style="color:var(--gold)">' + r.ep + ' EP</td><td>' + cards + '</td></tr>';
+    }).join('');
+    lbDiv.innerHTML = '<table class="tbl"><thead><tr><th>#</th><th>User ID</th><th>Total Earned</th><th>Balance</th><th>Cards Bought</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  } else {
+    lbDiv.innerHTML = '<span style="color:var(--text2)">No progress data yet.</span>';
+  }
+}
+
+async function startEvent() {
+  var eventId = document.getElementById('event-id-input').value.trim();
+  var days    = parseInt(document.getElementById('event-days-input').value);
+  var msg     = document.getElementById('event-start-msg');
+  if (!eventId || !days) { toast('Fill in event ID and duration', true); return; }
+
+  var existing = await db.from('active_event').select('key').eq('key','current').single();
+  if (existing.data) { toast('An event is already running. End it first.', true); return; }
+
+  var endsAt = new Date();
+  endsAt.setDate(endsAt.getDate() + days);
+
+  var res = await db.from('active_event').upsert({key:'current',event_id:eventId,started_at:new Date().toISOString(),ends_at:endsAt.toISOString()});
+  if (res.error) { toast('Failed: ' + res.error.message, true); return; }
+
+  msg.style.display = 'block';
+  msg.textContent = '✅ Event "' + eventId + '" started for ' + days + ' days!';
+  toast('Event "' + eventId + '" is now live!');
+  loadActiveEvent();
+}
+
+async function endEvent(eventId) {
+  if (!confirm('End event "' + eventId + '" now?')) return;
+  var res = await db.from('active_event').delete().eq('key','current');
+  if (res.error) { toast('Failed: ' + res.error.message, true); return; }
+  toast('Event ended.');
+  loadActiveEvent();
 }
 
 </script>
