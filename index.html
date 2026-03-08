@@ -117,58 +117,6 @@ async function endEvent(eventId) {
 }
 
 
-// ── Moves Tab ───────────────────────────────────────────
-
-function loadMoves() {
-  const combined = [
-    ...BOT_DATA.moves.map(m => ({ ...m, _sig: false })),
-    ...BOT_DATA.signatures.map(m => ({ ...m, _sig: true })),
-  ].sort((a,b) => a.name.localeCompare(b.name));
-  renderMoves(combined);
-}
-
-function filterMoves() {
-  const q    = document.getElementById('move-search').value.toLowerCase();
-  const cat  = document.getElementById('move-cat-filter').value;
-  const type = document.getElementById('move-type-filter').value;
-
-  let moves = [...BOT_DATA.moves];
-  let sigs  = [...BOT_DATA.signatures];
-
-  if (type === 'normal')    sigs  = [];
-  if (type === 'signature') moves = [];
-
-  const combined = [
-    ...moves.map(m => ({ ...m, _sig: false })),
-    ...sigs.map(m  => ({ ...m, _sig: true  })),
-  ].filter(m =>
-    (!q   || m.name.toLowerCase().includes(q) || m.id.includes(q) || (m.effect||'').includes(q)) &&
-    (!cat || m.category === cat)
-  ).sort((a,b) => a.name.localeCompare(b.name));
-
-  renderMoves(combined);
-}
-
-function renderMoves(moves) {
-  const catClass = { Physical:'cat-physical', Special:'cat-special', Status:'cat-status' };
-  const mono = 'font-family:monospace;';
-  const rows = moves.map(m => {
-    const sigBadge = m._sig ? ' <span class="sig-badge">SIG</span>' : '';
-    const typeCell = m._sig ? '<span style="color:var(--gold)">Signature</span>' : 'Normal';
-    return '<tr>' +
-      '<td style="' + mono + 'font-size:11px;color:var(--text2)">' + m.id + '</td>' +
-      '<td style="font-weight:600">' + m.name + sigBadge + '</td>' +
-      '<td class="' + (catClass[m.category]||'') + '" style="font-size:12px">' + (m.category||'—') + '</td>' +
-      '<td style="color:var(--red);' + mono + '">' + (m.power||'—') + '</td>' +
-      '<td style="' + mono + '">' + (m.accuracy != null ? m.accuracy+'%' : '—') + '</td>' +
-      '<td style="color:var(--gold);' + mono + '">' + (m.cost != null ? m.cost+'⚡' : '—') + '</td>' +
-      '<td style="font-size:11px;color:var(--text2)">' + (m.effect||'—') + '</td>' +
-      '<td style="font-size:11px">' + typeCell + '</td>' +
-    '</tr>';
-  });
-  document.getElementById('moves-tbody').innerHTML = rows.join('');
-}
-
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
@@ -1009,6 +957,59 @@ async function deleteCard(id) {
   toast('Card deleted');
   loadCards();
 }
+
+// ── Moves Tab ───────────────────────────────────────────
+
+function loadMoves() {
+  const combined = [
+    ...BOT_DATA.moves.map(m => ({ ...m, _sig: false })),
+    ...BOT_DATA.signatures.map(m => ({ ...m, _sig: true })),
+  ].sort((a,b) => a.name.localeCompare(b.name));
+  renderMoves(combined);
+}
+
+function filterMoves() {
+  const q    = document.getElementById('move-search').value.toLowerCase();
+  const cat  = document.getElementById('move-cat-filter').value;
+  const type = document.getElementById('move-type-filter').value;
+
+  let moves = [...BOT_DATA.moves];
+  let sigs  = [...BOT_DATA.signatures];
+
+  if (type === 'normal')    sigs  = [];
+  if (type === 'signature') moves = [];
+
+  const combined = [
+    ...moves.map(m => ({ ...m, _sig: false })),
+    ...sigs.map(m  => ({ ...m, _sig: true  })),
+  ].filter(m =>
+    (!q   || m.name.toLowerCase().includes(q) || m.id.includes(q) || (m.effect||'').includes(q)) &&
+    (!cat || m.category === cat)
+  ).sort((a,b) => a.name.localeCompare(b.name));
+
+  renderMoves(combined);
+}
+
+function renderMoves(moves) {
+  const catClass = { Physical:'cat-physical', Special:'cat-special', Status:'cat-status' };
+  const mono = 'font-family:monospace;';
+  const rows = moves.map(m => {
+    const sigBadge = m._sig ? ' <span class="sig-badge">SIG</span>' : '';
+    const typeCell = m._sig ? '<span style="color:var(--gold)">Signature</span>' : 'Normal';
+    return '<tr>' +
+      '<td style="' + mono + 'font-size:11px;color:var(--text2)">' + m.id + '</td>' +
+      '<td style="font-weight:600">' + m.name + sigBadge + '</td>' +
+      '<td class="' + (catClass[m.category]||'') + '" style="font-size:12px">' + (m.category||'—') + '</td>' +
+      '<td style="color:var(--red);' + mono + '">' + (m.power||'—') + '</td>' +
+      '<td style="' + mono + '">' + (m.accuracy != null ? m.accuracy+'%' : '—') + '</td>' +
+      '<td style="color:var(--gold);' + mono + '">' + (m.cost != null ? m.cost+'⚡' : '—') + '</td>' +
+      '<td style="font-size:11px;color:var(--text2)">' + (m.effect||'—') + '</td>' +
+      '<td style="font-size:11px">' + typeCell + '</td>' +
+    '</tr>';
+  });
+  document.getElementById('moves-tbody').innerHTML = rows.join('');
+}
+
 </script>
 </body>
 </html>
