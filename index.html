@@ -116,6 +116,51 @@ async function endEvent(eventId) {
   await loadActiveEvent();
 }
 
+
+// ── Moves Tab ───────────────────────────────────────────
+
+function loadMoves() {
+  renderMoves(BOT_DATA.moves, BOT_DATA.signatures);
+}
+
+function filterMoves() {
+  const q    = document.getElementById('move-search').value.toLowerCase();
+  const cat  = document.getElementById('move-cat-filter').value;
+  const type = document.getElementById('move-type-filter').value;
+
+  let moves = [...BOT_DATA.moves];
+  let sigs  = [...BOT_DATA.signatures];
+
+  if (type === 'normal')    sigs  = [];
+  if (type === 'signature') moves = [];
+
+  const combined = [
+    ...moves.map(m => ({ ...m, _sig: false })),
+    ...sigs.map(m  => ({ ...m, _sig: true  })),
+  ].filter(m =>
+    (!q   || m.name.toLowerCase().includes(q) || m.id.includes(q) || (m.effect||'').includes(q)) &&
+    (!cat || m.category === cat)
+  ).sort((a,b) => a.name.localeCompare(b.name));
+
+  renderMoves(combined);
+}
+
+function renderMoves(moves) {
+  const catClass = { Physical:'cat-physical', Special:'cat-special', Status:'cat-status' };
+  document.getElementById('moves-tbody').innerHTML = moves.map(m => `
+    <tr>
+      <td style="font-family:'Share Tech Mono';font-size:11px;color:var(--text2)">${m.id}</td>
+      <td style="font-weight:600">${m.name} ${m._sig ? '<span class=\"sig-badge\">SIG</span>' : ''}</td>
+      <td class="${catClass[m.category]||''}" style="font-size:12px">${m.category||'—'}</td>
+      <td style="color:var(--red);font-family:'Share Tech Mono'">${m.power||'—'}</td>
+      <td style="font-family:'Share Tech Mono'">${m.accuracy != null ? m.accuracy+'%' : '—'}</td>
+      <td style="color:var(--gold);font-family:'Share Tech Mono'">${m.cost != null ? m.cost+'⚡' : '—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${m.effect||'—'}</td>
+      <td style="font-size:11px;color:var(--text2)">${m._sig ? '<span style="color:var(--gold)">Signature</span>' : 'Normal'}</td>
+    </tr>
+  `).join('');
+}
+
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
@@ -340,6 +385,7 @@ async function endEvent(eventId) {
       <button class="nav-btn" onclick="showTab('economy')"  id="nav-economy" >💰 Economy</button>
       <button class="nav-btn" onclick="showTab('cards')"    id="nav-cards"   >🃏 Cards</button>
       <button class="nav-btn" onclick="showTab('events')"   id="nav-events"  >🐍 Events</button>
+      <button class="nav-btn" onclick="showTab('moves')"    id="nav-moves"   >💥 Moves</button>
     </div>
 
     <div class="main">
@@ -450,8 +496,45 @@ async function endEvent(eventId) {
       </div>
 
       <div id="tab-cards" style="display:none">
-        <div class="section-header"><h2>🃏 Cards</h2><div class="line"></div><button class="btn btn-gold" onclick="openCardModal()">+ New Card</button></div>
+        <div class="section-header"><h2>🃏 Cards</h2><div class="line"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="card-search" placeholder="Search cards..." oninput="filterCards()" style="width:200px;padding:6px 10px;font-size:13px" />
+            <select id="card-tier-filter" onchange="filterCards()" style="padding:6px 10px;font-size:13px">
+              <option value="">All Tiers</option>
+              <option>Basic</option><option>Elite</option><option>Ultra</option>
+            </select>
+            <select id="card-type-filter" onchange="filterCards()" style="padding:6px 10px;font-size:13px">
+              <option value="">All Types</option>
+              <option>Titan</option><option>Storm</option><option>Inferno</option><option>Shadow</option><option>Primal</option><option>Curse</option>
+            </select>
+          </div>
+        </div>
         <div id="cards-container"></div>
+      </div>
+
+      <!-- ── MOVES TAB ── -->
+      <div id="tab-moves" style="display:none">
+        <div class="section-header"><h2>💥 Moves</h2><div class="line"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="move-search" placeholder="Search moves..." oninput="filterMoves()" style="width:200px;padding:6px 10px;font-size:13px" />
+            <select id="move-cat-filter" onchange="filterMoves()" style="padding:6px 10px;font-size:13px">
+              <option value="">All Categories</option>
+              <option>Physical</option><option>Special</option><option>Status</option>
+            </select>
+            <select id="move-type-filter" onchange="filterMoves()" style="padding:6px 10px;font-size:13px">
+              <option value="">All</option>
+              <option value="normal">Normal</option><option value="signature">Signature</option>
+            </select>
+          </div>
+        </div>
+        <div class="panel" style="padding:0;overflow:hidden">
+          <table class="tbl" id="moves-table">
+            <thead><tr>
+              <th>ID</th><th>Name</th><th>Cat</th><th>Power</th><th>Acc%</th><th>Cost⚡</th><th>Effect</th><th>Type</th>
+            </tr></thead>
+            <tbody id="moves-tbody"></tbody>
+          </table>
+        </div>
       </div>
 
     </div><!-- /main -->
@@ -581,12 +664,12 @@ window.onload = () => {
 
 // ── Init ───────────────────────────────────────────────
 async function init() {
-  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards(), loadEvents()]);
+  await Promise.all([loadOverview(), loadPlayers(), loadEconomy(), loadCards(), loadEvents(), loadMoves()]);
 }
 
 // ── Tab navigation ─────────────────────────────────────
 function showTab(tab) {
-  ['overview','players','economy','cards','events'].forEach(t => {
+  ['overview','players','economy','cards','events','moves'].forEach(t => {
     document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
     document.getElementById(`nav-${t}`).classList.toggle('active', t === tab);
   });
@@ -778,43 +861,91 @@ async function saveEconomy() {
 // ══════════════════════════════════════════════════════════
 // CARDS
 // ══════════════════════════════════════════════════════════
-async function loadCards() {
-  const { data } = await sb.from('cards').select('*').order('tier').order('name');
-  const cards = data || [];
-  const tiers = ['Basic', 'Elite', 'Ultra'];
-  const tierColors = { Basic: 'var(--text2)', Elite: 'var(--blue)', Ultra: 'var(--gold)' };
+// Embedded bot data (from data.js at deploy time)
+const BOT_DATA = {"cards":[{"id":"wolf","name":"Wolf","tier":"Basic","price":10000,"type":"Storm","stats":{"hp":29,"attack":68,"defence":42,"speed":72,"agility":66},"passive":{"name":"Pack Instinct","description":"ATK and SPD +10% when HP below 40%."},"signature":"alpha_strike","description":"A fierce pack hunter.","emoji":"<:wolf:1479741864927297558>"},{"id":"bull","name":"Bull","tier":"Basic","price":12000,"type":"Titan","stats":{"hp":32,"attack":75,"defence":50,"speed":52,"agility":65},"passive":{"name":"Raging Bull","description":"Each consecutive attack +5% damage (max 3x)."},"signature":"bull_rush","description":"Pure aggression.","emoji":"<:bull:1479750058017689723>"},{"id":"crocodile","name":"Crocodile","tier":"Basic","price":15000,"type":"Primal","stats":{"hp":40,"attack":65,"defence":75,"speed":38,"agility":50},"passive":{"name":"Thick Hide","description":"First hit each turn reduced by 20%."},"signature":"death_spin","description":"Ancient and armoured.","emoji":"<:crocodile:1479750067937214475>"},{"id":"gorilla","name":"Gorilla","tier":"Basic","price":18000,"type":"Titan","stats":{"hp":45,"attack":62,"defence":70,"speed":42,"agility":44},"passive":{"name":"Ironclad","description":"DEF counts as 10% higher vs physical hits."},"signature":"silverback_rage","description":"Unmovable wall of muscle.","emoji":"<:gorilla:1479750003382816949>"},{"id":"hyena","name":"Hyena","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":28,"attack":70,"defence":42,"speed":70,"agility":68},"passive":{"name":"Frenzied","description":"Crits restore 8% max HP."},"signature":"cackle_frenzy","description":"Chaotic and relentless.","emoji":"<:hyena:1479749999720923196>"},{"id":"shark","name":"Shark","tier":"Basic","price":20000,"type":"Storm","stats":{"hp":30,"attack":74,"defence":45,"speed":68,"agility":58},"passive":{"name":"Blood Frenzy","description":"+15% damage vs opponents below 50% HP."},"signature":"feeding_frenzy","description":"Cold-blooded finisher.","emoji":"<:shark:1479751066290487357>"},{"id":"falcon","name":"Falcon","tier":"Basic","price":14000,"type":"Storm","stats":{"hp":24,"attack":52,"defence":36,"speed":88,"agility":80},"passive":{"name":"Aerial Mastery","description":"+15% base dodge chance."},"signature":"diving_strike","description":"Near untouchable.","emoji":"<:falcon:1479742843839975464>"},{"id":"komodo_dragon","name":"Komodo Dragon","tier":"Basic","price":16000,"type":"Curse","stats":{"hp":37,"attack":60,"defence":65,"speed":44,"agility":63},"passive":{"name":"Toxic Blood","description":"Physical attackers have 20% chance to be poisoned."},"signature":"komodo_venom","description":"Patient and toxic.","emoji":"<:komodo_dragon:1479750065202532352>"},{"id":"wolverine","name":"Wolverine","tier":"Basic","price":22000,"type":"Storm","stats":{"hp":33,"attack":72,"defence":55,"speed":58,"agility":55},"passive":{"name":"Undying Fury","description":"ATK +25% when HP below 20%."},"signature":"berserker","description":"Does not know how to quit.","emoji":"<:wolverine:1479751069369106562>"},{"id":"wild_boar","name":"Wild Boar","tier":"Basic","price":10000,"type":"Curse","stats":{"hp":43,"attack":58,"defence":66,"speed":50,"agility":48},"passive":{"name":"Tusk Guard","description":"Takes 10% reduced damage from all sources."},"signature":"wild_frenzy","description":"Built like a battering ram.","emoji":"<:wild_boar:1479750061964656741>"},{"id":"lion","name":"Lion","tier":"Elite","price":50000,"type":"Inferno","stats":{"hp":41,"attack":100,"defence":68,"speed":88,"agility":89},"passive":{"name":"King's Presence","description":"At battle start, opponent ATK lowered 1 stage."},"signature":"kings_roar","description":"Commands respect before the first blow.","emoji":"<:lion:1479741856211406951>"},{"id":"leopard","name":"Leopard","tier":"Elite","price":75000,"type":"Shadow","stats":{"hp":36,"attack":88,"defence":58,"speed":105,"agility":104},"passive":{"name":"Shadow Stalk","description":"First move each battle always crits."},"signature":"shadow_claw","description":"Strikes before you know it is there.","emoji":"<:leopard:1479741850729582644>"},{"id":"jaguar","name":"Jaguar","tier":"Elite","price":100000,"type":"Storm","stats":{"hp":40,"attack":108,"defence":62,"speed":90,"agility":88},"passive":{"name":"Jaw Lock","description":"Crushing Bite and Death Roll deal +15% damage."},"signature":"jaw_of_death","description":"Once it locks on its over.","emoji":"<:jaguar:1479741841917218960>"},{"id":"grizzly_bear","name":"Grizzly Bear","tier":"Elite","price":200000,"type":"Titan","stats":{"hp":61,"attack":95,"defence":88,"speed":60,"agility":67},"passive":{"name":"Bear Endurance","description":"Recovers 5% max HP at end of each turn."},"signature":"grizzly_rage","description":"Outlasts everything.","emoji":"<:grizzly_bear:1479741835839803392>"},{"id":"king_cobra","name":"King Cobra","tier":"Ultra","price":500000,"type":"Curse","stats":{"hp":48,"attack":125,"defence":85,"speed":132,"agility":130},"passive":{"name":"Neurotoxin","description":"Poison from this card deals double damage."},"signature":"neurotoxin_blast","description":"Fast, lethal, paralyzing.","emoji":"<:king_cobra:1479741822346596516>"},{"id":"tiger","name":"Tiger","tier":"Ultra","price":1000000,"type":"Inferno","stats":{"hp":55,"attack":148,"defence":90,"speed":115,"agility":107},"passive":{"name":"Bengal Fury","description":"Every 3rd attack: guaranteed crit +20% damage."},"signature":"bengal_fury","description":"Raw power wrapped in speed and fury.","emoji":"<:tiger:1479741828193456201>"},{"id":"polar_bear","name":"Polar Bear","tier":"Ultra","price":2000000,"type":"Titan","stats":{"hp":85,"attack":128,"defence":130,"speed":72,"agility":75},"passive":{"name":"Arctic Resilience","description":"All damage reduced 12%. Cannot be poisoned."},"signature":"blizzard_slam","description":"An unstoppable glacier of force.","emoji":"<:polar_bear:1479741818009813075>"}],"moves":[{"id":"basic_attack","name":"Basic Attack","category":"Physical","power":20,"accuracy":100,"cost":0,"description":"A weak strike. Always available."},{"id":"quick_jab","name":"Quick Jab","category":"Physical","power":28,"accuracy":100,"cost":2,"priority":true,"description":"Lightning-fast. Always moves first."},{"id":"scratch","name":"Scratch","category":"Physical","power":32,"accuracy":100,"cost":2,"description":"Basic claw scratch. Cheap and reliable."},{"id":"slash","name":"Slash","category":"Physical","power":42,"accuracy":95,"cost":3,"description":"A clean swift slash."},{"id":"rake","name":"Rake","category":"Physical","power":35,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":40,"description":"Rakes claws. 40% chance to lower defence."},{"id":"lunge","name":"Lunge","category":"Physical","power":45,"accuracy":90,"cost":3,"bonusIfFirst":15,"description":"Lunges forward. +15 damage if moving first."},{"id":"pounce","name":"Pounce","category":"Physical","power":48,"accuracy":92,"cost":3,"bonusIfFirst":20,"description":"Leaps at opponent. +20 damage if moving first."},{"id":"snap","name":"Snap","category":"Physical","power":22,"accuracy":95,"cost":2,"hits":2,"description":"Two quick bites."},{"id":"claw_swipe","name":"Claw Swipe","category":"Physical","power":26,"accuracy":90,"cost":3,"hits":2,"description":"Dual claw swipes. Hits twice."},{"id":"tail_strike","name":"Tail Strike","category":"Physical","power":32,"accuracy":95,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Sweeping tail. Always lowers opponent defence."},{"id":"skewer","name":"Skewer","category":"Physical","power":38,"accuracy":88,"cost":3,"effect":"bleed","effectChance":60,"description":"60% chance to cause bleed."},{"id":"body_slam","name":"Body Slam","category":"Physical","power":62,"accuracy":90,"cost":3,"effect":"stun","effectChance":15,"description":"15% chance to stun."},{"id":"headbutt","name":"Headbutt","category":"Physical","power":55,"accuracy":88,"cost":3,"effect":"stun","effectChance":20,"description":"20% chance to stun."},{"id":"crushing_bite","name":"Crushing Bite","category":"Physical","power":65,"accuracy":85,"cost":4,"defPierce":0.2,"description":"Ignores 20% of opponent defence."},{"id":"gore","name":"Gore","category":"Physical","power":45,"accuracy":85,"cost":3,"effect":"bleed","effectChance":100,"description":"Always causes bleed for 3 turns."},{"id":"wild_thrash","name":"Wild Thrash","category":"Physical","power":22,"accuracy":85,"cost":3,"hits":"2-3","description":"Hits 2-3 times randomly."},{"id":"ground_stomp","name":"Ground Stomp","category":"Physical","power":48,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"body_press","name":"Body Press","category":"Physical","power":58,"accuracy":90,"cost":3,"useDefence":true,"description":"Uses own defence stat as attack."},{"id":"double_hit","name":"Double Hit","category":"Physical","power":38,"accuracy":88,"cost":3,"hits":2,"description":"Strikes precisely twice."},{"id":"horn_drive","name":"Horn Drive","category":"Physical","power":68,"accuracy":82,"cost":4,"description":"High power, lower accuracy."},{"id":"crunch","name":"Crunch","category":"Physical","power":70,"accuracy":88,"cost":4,"effect":"lower_defence","effectChance":40,"description":"40% chance to lower defence."},{"id":"tackle","name":"Tackle","category":"Physical","power":55,"accuracy":92,"cost":3,"description":"Reliable full-body tackle."},{"id":"ambush","name":"Ambush","category":"Physical","power":58,"accuracy":90,"cost":3,"critIfSecond":true,"description":"Guaranteed crit if opponent moved first."},{"id":"chip_away","name":"Chip Away","category":"Physical","power":52,"accuracy":100,"cost":3,"ignoreStages":true,"description":"Ignores all opponent stat stage changes."},{"id":"snap_bite","name":"Snap Bite","category":"Physical","power":55,"accuracy":90,"cost":3,"defPierce":0.1,"description":"Fast bite. Pierces 10% defence."},{"id":"stomp","name":"Stomp","category":"Physical","power":58,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"heavy_slam","name":"Heavy Slam","category":"Physical","power":82,"accuracy":80,"cost":4,"description":"Crushing full-body slam."},{"id":"reckless_charge","name":"Reckless Charge","category":"Physical","power":92,"accuracy":85,"cost":5,"recoil":0.15,"description":"15% recoil damage."},{"id":"skull_bash","name":"Skull Bash","category":"Physical","power":88,"accuracy":80,"cost":5,"effect":"stun","effectChance":25,"description":"25% stun chance."},{"id":"iron_tail","name":"Iron Tail","category":"Physical","power":78,"accuracy":82,"cost":4,"effect":"lower_defence","effectChance":35,"description":"35% chance to drop defence."},{"id":"avalanche","name":"Avalanche","category":"Physical","power":72,"accuracy":88,"cost":4,"bonusIfSecond":50,"description":"+50% power if hit first this turn."},{"id":"retaliate","name":"Retaliate","category":"Physical","power":78,"accuracy":90,"cost":4,"bonusIfDamaged":30,"description":"+30% damage if took damage last turn."},{"id":"earthquake","name":"Earthquake","category":"Physical","power":82,"accuracy":90,"cost":5,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"megaton_slam","name":"Megaton Slam","category":"Physical","power":98,"accuracy":75,"cost":5,"description":"Maximum power. High risk."},{"id":"maul","name":"Maul","category":"Physical","power":75,"accuracy":82,"cost":4,"effect":"bleed","effectChance":80,"description":"80% chance to cause bleed."},{"id":"tusk_ram","name":"Tusk Ram","category":"Physical","power":72,"accuracy":85,"cost":4,"effect":"bleed","effectChance":50,"description":"50% chance to cause bleed."},{"id":"trample","name":"Trample","category":"Physical","power":65,"accuracy":88,"cost":4,"effect":"lower_agility","effectChance":60,"description":"60% chance to lower agility."},{"id":"death_roll","name":"Death Roll","category":"Physical","power":122,"accuracy":75,"cost":6,"description":"Grab and roll violently. Save up for this."},{"id":"giga_impact","name":"Giga Impact","category":"Physical","power":132,"accuracy":70,"cost":6,"skipNextTurn":true,"description":"Devastating impact. Must rest next turn."},{"id":"final_strike","name":"Final Strike","category":"Physical","power":112,"accuracy":80,"cost":6,"bonusIfLowHp":true,"description":"+50% power if user below 30% HP."},{"id":"obliterate","name":"Obliterate","category":"Physical","power":128,"accuracy":72,"cost":6,"defPierce":0.3,"description":"Pierces 30% of all defence."},{"id":"flail","name":"Flail","category":"Physical","power":20,"accuracy":100,"cost":2,"scalesMissingHp":true,"description":"Power scales with missing HP. Max 150."},{"id":"sucker_punch","name":"Sucker Punch","category":"Physical","power":68,"accuracy":90,"cost":3,"priority":true,"failsVsSupport":true,"description":"Priority but fails vs support moves."},{"id":"last_resort","name":"Last Resort","category":"Physical","power":82,"accuracy":85,"cost":4,"bonusPerTurn":8,"description":"+8 power each turn survived."},{"id":"fang_strike","name":"Fang Strike","category":"Physical","power":50,"accuracy":88,"cost":3,"effect":"poison","effectChance":30,"description":"30% chance to poison."},{"id":"poison_fang","name":"Poison Fang","category":"Physical","power":48,"accuracy":88,"cost":3,"effect":"poison","effectChance":50,"description":"50% chance to poison."},{"id":"constrict","name":"Constrict","category":"Physical","power":40,"accuracy":90,"cost":3,"effect":"lower_agility","effectChance":100,"description":"Always lowers opponent agility."},{"id":"roar","name":"Roar","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_atk_def","effectChance":100,"description":"Lowers opponent ATK and DEF by 1 stage."},{"id":"intimidate","name":"Intimidate","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"lower_atk_2","effectChance":100,"description":"Sharply lowers opponent ATK by 2 stages."},{"id":"taunt","name":"Taunt","category":"Special","power":0,"accuracy":90,"cost":2,"effect":"taunt","effectChance":100,"description":"Forces opponent to use only Physical moves for 2 turns."},{"id":"polar_howl","name":"Polar Howl","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"lower_spd_2","effectChance":100,"description":"Sharply lowers opponent speed."},{"id":"snarl","name":"Snarl","category":"Special","power":0,"accuracy":95,"cost":2,"effect":"lower_atk","effectChance":100,"description":"Lowers opponent attack by 1 stage."},{"id":"terrify","name":"Terrify","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"lower_all","effectChance":100,"description":"Lowers ALL opponent stats by 1 stage."},{"id":"screech","name":"Screech","category":"Special","power":0,"accuracy":92,"cost":2,"effect":"lower_defence","effectChance":100,"description":"Lowers opponent defence by 1 stage."},{"id":"leer","name":"Leer","category":"Special","power":0,"accuracy":100,"cost":1,"effect":"lower_defence","effectChance":100,"description":"Menacing glare. Lowers defence. Very cheap."},{"id":"war_cry","name":"War Cry","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises own attack by 1 stage."},{"id":"feral_rage","name":"Feral Rage","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"feral_rage_buff","effectChance":100,"description":"ATK +2 stages, DEF -1 stage."},{"id":"pack_howl","name":"Pack Howl","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_agi","effectChance":100,"maxStacks":2,"description":"Raises SPD and AGI. Max 2 uses per battle."},{"id":"predator_instinct","name":"Predator Instinct","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit","effectChance":100,"description":"Raises crit chance for 3 turns."},{"id":"blood_scent","name":"Blood Scent","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"next_hit_bonus","effectChance":100,"description":"Next attack deals +40% damage."},{"id":"apex_presence","name":"Apex Presence","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"raise_all_stats","effectChance":100,"description":"Raises all own stats by 1 stage."},{"id":"sharpen","name":"Sharpen","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_atk","effectChance":100,"description":"Raises attack by 1 stage."},{"id":"focus_energy","name":"Focus Energy","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_crit_2","effectChance":100,"description":"Greatly raises crit chance for 2 turns."},{"id":"hone_instincts","name":"Hone Instincts","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_spd","effectChance":100,"description":"Raises ATK and SPD by 1 stage each."},{"id":"coil","name":"Coil","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def_acc","effectChance":100,"description":"Raises ATK, DEF, and accuracy by 1 each."},{"id":"bulk_up","name":"Bulk Up","category":"Special","power":0,"accuracy":100,"cost":3,"effect":"raise_atk_def","effectChance":100,"description":"Raises ATK and DEF by 1 stage each."},{"id":"agility","name":"Agility","category":"Special","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"toxic_spit","name":"Toxic Spit","category":"Special","power":22,"accuracy":85,"cost":2,"effect":"poison","effectChance":100,"description":"Poisons opponent for 4 turns."},{"id":"venom_fangs","name":"Venom Fangs","category":"Special","power":48,"accuracy":85,"cost":4,"effect":"poison","effectChance":100,"description":"Damage and guaranteed poison."},{"id":"serpent_gaze","name":"Serpent Gaze","category":"Special","power":0,"accuracy":90,"cost":3,"effect":"stun","effectChance":30,"description":"30% chance to stun."},{"id":"death_stare","name":"Death Stare","category":"Special","power":0,"accuracy":90,"cost":4,"effect":"hp_drain_dot","effectChance":100,"description":"Opponent loses 10% max HP/turn for 3 turns."},{"id":"primal_surge","name":"Primal Surge","category":"Special","power":30,"accuracy":90,"cost":4,"scaleMissingHp":true,"description":"Power scales with missing HP."},{"id":"acid_spray","name":"Acid Spray","category":"Special","power":30,"accuracy":88,"cost":3,"effect":"lower_defence","effectChance":100,"description":"Damage + always lowers opponent DEF."},{"id":"venom_drip","name":"Venom Drip","category":"Special","power":0,"accuracy":88,"cost":3,"effect":"toxic","effectChance":100,"description":"Applies toxic — damage increases each turn."},{"id":"hex","name":"Hex","category":"Special","power":38,"accuracy":92,"cost":3,"doubleVsStatus":true,"description":"Double power vs opponents with status conditions."},{"id":"lash_out","name":"Lash Out","category":"Special","power":40,"accuracy":90,"cost":3,"doubleIfStatDropped":true,"description":"Double power if your stats were lowered this turn."},{"id":"venoshock","name":"Venoshock","category":"Special","power":35,"accuracy":90,"cost":3,"doubleVsPoison":true,"description":"Double damage against poisoned opponents."},{"id":"brace","name":"Brace","category":"Support","power":0,"accuracy":100,"cost":1,"effect":"brace","effectChance":100,"description":"Reduces incoming damage by 50% this turn."},{"id":"recover","name":"Recover","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"heal_20","effectChance":100,"description":"Restores 20% of max HP."},{"id":"second_wind","name":"Second Wind","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"second_wind","effectChance":100,"description":"Restores 15% HP + clears one status."},{"id":"fortify","name":"Fortify","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Raises defence by 2 stages."},{"id":"counter_stance","name":"Counter Stance","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"counter","effectChance":100,"description":"Reflects 30% of next hit back."},{"id":"endure","name":"Endure","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"endure","effectChance":100,"description":"Cannot be reduced below 1 HP this turn."},{"id":"camouflage","name":"Camouflage","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"evasion_boost","effectChance":100,"description":"Next attack against you has 50% reduced accuracy."},{"id":"adrenaline","name":"Adrenaline","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_spd_2","effectChance":100,"description":"Sharply raises speed by 2 stages."},{"id":"last_stand","name":"Last Stand","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"last_stand","effectChance":100,"requiresLowHp":true,"description":"Only below 25% HP. Raises all stats by 2 stages."},{"id":"shed_skin","name":"Shed Skin","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"cleanse_status","effectChance":100,"description":"Cleanses all status conditions."},{"id":"dig_in","name":"Dig In","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_def","effectChance":100,"description":"Raises defence by 1 stage."},{"id":"regenerate","name":"Regenerate","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_regen","effectChance":100,"description":"Restore 10% HP for the next 3 turns."},{"id":"mirror_coat","name":"Mirror Coat","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"mirror_coat","effectChance":100,"description":"Reflects 50% of special move damage back."},{"id":"iron_defense","name":"Iron Defense","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"raise_def_2","effectChance":100,"description":"Sharply raises defence by 2 stages."},{"id":"focus","name":"Focus","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"raise_acc","effectChance":100,"description":"Raises accuracy by 1 stage."},{"id":"stealth","name":"Stealth","category":"Support","power":0,"accuracy":100,"cost":2,"effect":"stealth","effectChance":100,"description":"Next move this battle is guaranteed to crit."},{"id":"blood_rage","name":"Blood Rage","category":"Support","power":0,"accuracy":100,"cost":3,"effect":"blood_rage","effectChance":100,"description":"ATK +3 stages, lose 5% HP/turn for 3 turns."},{"id":"hibernation","name":"Hibernation","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"heal_35","effectChance":100,"description":"Restores 35% HP but skips next turn."}],"signatures":[{"id":"alpha_strike","name":"Alpha Strike","category":"Physical","power":85,"accuracy":92,"cost":4,"effect":"raise_atk_spd","effectChance":100,"description":"[WOLF] Raises own ATK and SPD after hitting."},{"id":"bull_rush","name":"Bull Rush","category":"Physical","power":110,"accuracy":85,"cost":5,"recoil":0.1,"effect":"stun","effectChance":35,"description":"[BULL] 35% stun chance. 10% recoil."},{"id":"death_spin","name":"Death Spin","category":"Physical","power":100,"accuracy":80,"cost":5,"hits":2,"defPierce":0.25,"description":"[CROC] Hits twice. Pierces 25% DEF each hit."},{"id":"silverback_rage","name":"Silverback Rage","category":"Physical","power":105,"accuracy":85,"cost":5,"effect":"raise_atk_def","effectChance":100,"description":"[GORILLA] Raises ATK and DEF after hitting."},{"id":"cackle_frenzy","name":"Cackle Frenzy","category":"Physical","power":25,"accuracy":90,"cost":4,"hits":"3-5","description":"[HYENA] Hits 3-5 times unpredictably."},{"id":"feeding_frenzy","name":"Feeding Frenzy","category":"Physical","power":90,"accuracy":88,"cost":5,"bonusIfBleeding":40,"description":"[SHARK] +40 damage if opponent is bleeding."},{"id":"diving_strike","name":"Diving Strike","category":"Physical","power":95,"accuracy":90,"cost":4,"priority":true,"critIfFirst":true,"description":"[FALCON] Priority. Crits if you move first."},{"id":"komodo_venom","name":"Komodo Venom","category":"Special","power":55,"accuracy":88,"cost":4,"effect":"toxic","effectChance":100,"description":"[KOMODO] Applies toxic status."},{"id":"berserker","name":"Berserker","category":"Support","power":0,"accuracy":100,"cost":4,"effect":"berserker_stance","effectChance":100,"description":"[WOLVERINE] ATK x2, take 20% more damage for 2 turns."},{"id":"wild_frenzy","name":"Wild Frenzy","category":"Physical","power":115,"accuracy":82,"cost":5,"effect":"lower_atk_def","effectChance":100,"description":"[WILD BOAR] Lowers own ATK and DEF after use."},{"id":"kings_roar","name":"King's Roar","category":"Special","power":0,"accuracy":100,"cost":4,"effect":"kings_roar_effect","effectChance":100,"description":"[LION] Lowers ALL opponent stats by 1 stage."},{"id":"shadow_claw","name":"Shadow Claw","category":"Physical","power":78,"accuracy":95,"cost":4,"highCritRatio":true,"description":"[LEOPARD] High crit ratio. Strikes from darkness."},{"id":"jaw_of_death","name":"Jaw of Death","category":"Physical","power":140,"accuracy":78,"cost":6,"defPierce":0.4,"description":"[JAGUAR] Pierces 40% of all defence."},{"id":"grizzly_rage","name":"Grizzly Rage","category":"Physical","power":100,"accuracy":85,"cost":5,"effect":"raise_all_stats","effectChance":100,"description":"[GRIZZLY] Raises all stats after landing."},{"id":"neurotoxin_blast","name":"Neurotoxin Blast","category":"Special","power":70,"accuracy":85,"cost":5,"effect":"toxic","effectChance":100,"description":"[KING COBRA] Applies toxic + poisons for 4 turns."},{"id":"bengal_fury","name":"Bengal Fury","category":"Physical","power":110,"accuracy":88,"cost":5,"hits":2,"description":"[TIGER] Hits twice. Both have raised crit chance."},{"id":"blizzard_slam","name":"Blizzard Slam","category":"Physical","power":120,"accuracy":82,"cost":6,"effect":"lower_spd_2","effectChance":100,"description":"[POLAR BEAR] Sharply drops opponent speed."}],"levelUpMoves":{"wolf":{"startingMoves":["scratch","quick_jab","lunge","snarl"],"tree":{"5":"slash","8":"pack_howl","12":"predator_instinct","16":"pounce","20":"feral_rage","25":"blood_scent","30":"hone_instincts","35":"wild_thrash","40":"reckless_charge","45":"roar","50":"alpha_strike"}},"bull":{"startingMoves":["tackle","headbutt","lunge","leer"],"tree":{"5":"ground_stomp","8":"horn_drive","12":"wild_thrash","16":"heavy_slam","20":"bulk_up","25":"tusk_ram","30":"trample","35":"reckless_charge","40":"earthquake","45":"skull_bash","50":"bull_rush"}},"crocodile":{"startingMoves":["snap","tail_strike","brace","dig_in"],"tree":{"5":"crushing_bite","8":"gore","12":"body_press","16":"death_roll","20":"fortify","25":"snap_bite","30":"endure","35":"maul","40":"avalanche","45":"iron_defense","50":"death_spin"}},"gorilla":{"startingMoves":["scratch","body_slam","dig_in","roar"],"tree":{"5":"headbutt","8":"body_press","12":"fortify","16":"heavy_slam","20":"bulk_up","25":"ground_stomp","30":"iron_defense","35":"earthquake","40":"endure","45":"megaton_slam","50":"silverback_rage"}},"hyena":{"startingMoves":["scratch","quick_jab","snarl","taunt"],"tree":{"5":"slash","8":"feral_rage","12":"wild_thrash","16":"adrenaline","20":"blood_scent","25":"crushing_bite","30":"lash_out","35":"reckless_charge","40":"focus_energy","45":"blood_rage","50":"cackle_frenzy"}},"shark":{"startingMoves":["snap","lunge","leer","scratch"],"tree":{"5":"gore","8":"blood_scent","12":"crushing_bite","16":"predator_instinct","20":"fang_strike","25":"reckless_charge","30":"hex","35":"maul","40":"death_roll","45":"obliterate","50":"feeding_frenzy"}},"falcon":{"startingMoves":["quick_jab","scratch","camouflage","adrenaline"],"tree":{"5":"pounce","8":"ambush","12":"predator_instinct","16":"hone_instincts","20":"counter_stance","25":"focus_energy","30":"sucker_punch","35":"stealth","40":"slash","45":"final_strike","50":"diving_strike"}},"komodo_dragon":{"startingMoves":["scratch","tail_strike","toxic_spit","leer"],"tree":{"5":"poison_fang","8":"fang_strike","12":"acid_spray","16":"venom_drip","20":"shed_skin","25":"hex","30":"venoshock","35":"venom_fangs","40":"death_stare","45":"crushing_bite","50":"komodo_venom"}},"wolverine":{"startingMoves":["scratch","claw_swipe","second_wind","snarl"],"tree":{"5":"slash","8":"feral_rage","12":"endure","16":"retaliate","20":"blood_rage","25":"maul","30":"lash_out","35":"reckless_charge","40":"chip_away","45":"last_stand","50":"berserker"}},"wild_boar":{"startingMoves":["tackle","headbutt","brace","leer"],"tree":{"5":"gore","8":"tusk_ram","12":"body_slam","16":"fortify","20":"trample","25":"horn_drive","30":"reckless_charge","35":"endure","40":"iron_defense","45":"skull_bash","50":"wild_frenzy"}},"lion":{"startingMoves":["slash","pounce","war_cry","snarl"],"tree":{"5":"claw_swipe","8":"roar","12":"predator_instinct","16":"feral_rage","20":"blood_scent","25":"ambush","30":"hone_instincts","35":"intimidate","40":"focus_energy","45":"giga_impact","50":"kings_roar"}},"leopard":{"startingMoves":["quick_jab","ambush","camouflage","scratch"],"tree":{"5":"pounce","8":"stealth","12":"predator_instinct","16":"blood_scent","20":"sucker_punch","25":"counter_stance","30":"focus_energy","35":"claw_swipe","40":"lash_out","45":"final_strike","50":"shadow_claw"}},"jaguar":{"startingMoves":["slash","crushing_bite","pounce","blood_scent"],"tree":{"5":"crunch","8":"feral_rage","12":"predator_instinct","16":"death_roll","20":"hone_instincts","25":"snap_bite","30":"maul","35":"war_cry","40":"obliterate","45":"giga_impact","50":"jaw_of_death"}},"grizzly_bear":{"startingMoves":["body_slam","claw_swipe","dig_in","roar"],"tree":{"5":"maul","8":"body_press","12":"fortify","16":"recover","20":"bulk_up","25":"heavy_slam","30":"iron_defense","35":"earthquake","40":"regenerate","45":"endure","50":"grizzly_rage"}},"king_cobra":{"startingMoves":["quick_jab","toxic_spit","serpent_gaze","leer"],"tree":{"5":"poison_fang","8":"venom_fangs","12":"coil","16":"venom_drip","20":"acid_spray","25":"hex","30":"venoshock","35":"death_stare","40":"shed_skin","45":"terrify","50":"neurotoxin_blast"}},"tiger":{"startingMoves":["slash","pounce","claw_swipe","feral_rage"],"tree":{"5":"blood_scent","8":"predator_instinct","12":"crushing_bite","16":"hone_instincts","20":"war_cry","25":"focus_energy","30":"maul","35":"reckless_charge","40":"primal_surge","45":"obliterate","50":"bengal_fury"}},"polar_bear":{"startingMoves":["body_slam","heavy_slam","fortify","roar"],"tree":{"5":"body_press","8":"polar_howl","12":"iron_defense","16":"recover","20":"bulk_up","25":"earthquake","30":"avalanche","35":"regenerate","40":"endure","45":"apex_presence","50":"blizzard_slam"}}}};
+
+function loadCards() {
+  renderCards(BOT_DATA.cards);
+}
+
+function filterCards() {
+  const q    = document.getElementById('card-search').value.toLowerCase();
+  const tier = document.getElementById('card-tier-filter').value;
+  const type = document.getElementById('card-type-filter').value;
+  const filtered = BOT_DATA.cards.filter(c =>
+    (!q    || c.name.toLowerCase().includes(q) || c.id.includes(q)) &&
+    (!tier || c.tier === tier) &&
+    (!type || c.type === type)
+  );
+  renderCards(filtered);
+}
+
+function renderCards(cards) {
+  const tiers = ['Basic','Elite','Ultra'];
+  const tierColors = { Basic:'var(--text2)', Elite:'var(--blue)', Ultra:'var(--gold)' };
+  const lu = BOT_DATA.levelUpMoves;
 
   document.getElementById('cards-container').innerHTML = cards.length === 0
-    ? `<div class="panel" style="text-align:center;padding:48px;color:var(--text2)">No cards in Supabase yet. Click "+ New Card" to add one.<br><br><span style="font-size:12px;color:var(--text3)">See SETUP.md for syncing with your bot's data.js</span></div>`
+    ? `<div class="panel" style="text-align:center;padding:48px;color:var(--text2)">No cards match your filters.</div>`
     : tiers.map(tier => {
         const tc = cards.filter(c => c.tier === tier);
         if (!tc.length) return '';
         return `
           <div style="margin-bottom:24px">
-            <p style="font-size:11px;color:${tierColors[tier]};letter-spacing:3px;text-transform:uppercase;font-family:Rajdhani;font-weight:700;margin-bottom:12px">── ${tier} Tier ──</p>
+            <p style="font-size:11px;color:${tierColors[tier]};letter-spacing:3px;text-transform:uppercase;font-family:Rajdhani;font-weight:700;margin-bottom:12px">── ${tier} Tier (${tc.length} cards) ──</p>
             <div class="card-grid">
-              ${tc.map(card => `
-                <div class="card-item">
+              ${tc.map(card => {
+                const tree = lu[card.id];
+                const startMoves = tree?.startingMoves || [];
+                const learnMoves = Object.entries(tree?.tree || {}).map(([lvl,id]) => ({lvl,id}));
+                const sigMove = BOT_DATA.signatures.find(s => s.id === card.signature);
+                const bst = Object.values(card.stats||{}).reduce((a,b)=>a+b,0);
+                return `
+                <div class="card-item panel" onclick="toggleCardDetail('${card.id}')">
                   <div class="card-item-header">
-                    <div><span style="font-size:18px;margin-right:6px">${card.emoji||''}</span><span class="card-item-name">${card.name}</span></div>
-                    <span class="tier-badge tier-${card.tier}">${card.type||''}</span>
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span style="font-size:20px">${card.emoji||'🃏'}</span>
+                      <div>
+                        <div class="card-item-name">${card.name}</div>
+                        <div style="font-size:11px;color:var(--text2);font-family:'Share Tech Mono'">${card.id}</div>
+                      </div>
+                    </div>
+                    <div style="text-align:right">
+                      <span class="tier-badge tier-${card.tier}">${card.type}</span>
+                      <div style="font-size:10px;color:var(--text2);margin-top:3px">BST ${bst}</div>
+                    </div>
                   </div>
-                  <div class="card-stats">
+                  <div class="card-stats" style="margin-top:10px">
                     ${['hp','attack','defence','speed','agility'].map(s => `
                       <div class="card-stat">
-                        <div class="card-stat-key">${s.slice(0,3)}</div>
+                        <div class="card-stat-key">${s.slice(0,3).toUpperCase()}</div>
                         <div class="card-stat-val">${card.stats?.[s]||0}</div>
                       </div>`).join('')}
                   </div>
-                  <div class="card-actions">
-                    <button class="btn btn-blue" style="flex:1;padding:6px;font-size:12px" onclick='openCardModal(${JSON.stringify(card)})'>Edit</button>
-                    <button class="btn btn-red" style="flex:1;padding:6px;font-size:12px" onclick="deleteCard('${card.id}')">Delete</button>
+                  <div class="card-detail" id="detail-${card.id}">
+                    <div class="detail-row"><span>Price</span><span>${(card.price||0).toLocaleString()} cr</span></div>
+                    <div class="detail-row"><span>Passive</span><span style="max-width:200px;text-align:right">${card.passive?.name||'—'}</span></div>
+                    <div class="detail-row" style="font-size:11px;color:var(--text3)"><span></span><span style="max-width:220px;text-align:right;font-style:italic">${card.passive?.description||''}</span></div>
+                    <div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--text2);letter-spacing:1px;text-transform:uppercase">Starting Moves</div>
+                    <div class="movelist">${startMoves.map(id=>`<span class="move-pill">${id}</span>`).join('')}</div>
+                    <div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--text2);letter-spacing:1px;text-transform:uppercase">Level-Up Moves</div>
+                    <div class="movelist">${learnMoves.map(({lvl,id})=>`<span class="move-pill">L${lvl}: ${id}</span>`).join('')}</div>
+                    ${sigMove ? `<div style="margin-top:8px;margin-bottom:4px;font-size:10px;color:var(--gold);letter-spacing:1px;text-transform:uppercase">Signature (L50)</div>
+                    <div class="movelist"><span class="move-pill sig">${sigMove.name}</span></div>
+                    <div style="font-size:11px;color:var(--text2);margin-top:4px;font-style:italic">${sigMove.description||''}</div>` : ''}
+                    <div style="margin-top:12px;display:flex;gap:6px">
+                      <button class="btn btn-blue" style="flex:1;padding:5px;font-size:12px" onclick="event.stopPropagation();openCardModal(${JSON.stringify(card).replace(/"/g,'&quot;')})">✏️ Edit Stats</button>
+                    </div>
                   </div>
-                </div>
-              `).join('')}
+                </div>`}).join('')}
             </div>
           </div>`;
       }).join('');
+}
+
+function toggleCardDetail(cardId) {
+  const el = document.getElementById('detail-' + cardId);
+  if (el) el.classList.toggle('open');
 }
 
 function openCardModal(card) {
